@@ -232,7 +232,11 @@
 
         <DockPanel>
             <!-- how the compile is going -->
-            <TextBlock Name="statusLabel" DockPanel.Dock="Bottom" Margin="12,4,12,8" Text="Ready" Foreground="{DynamicResource ContrastBrush}" />
+            <DockPanel DockPanel.Dock="Bottom" Margin="12,4,12,8">
+                <!-- how far the compile has got, while it runs -->
+                <ProgressBar Name="compileBar" DockPanel.Dock="Right" Width="320" Margin="12,0,0,0" Maximum="100" ShowProgressText="True" VerticalAlignment="Center" IsVisible="False" />
+                <TextBlock Name="statusLabel" Text="Ready" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="{DynamicResource ContrastBrush}" />
+            </DockPanel>
 
             <!-- the compile's actions, whether the game and tools are there, and the settings -->
             <Grid DockPanel.Dock="Top" Margin="8,6" ColumnDefinitions="Auto,*,Auto,Auto">
@@ -354,7 +358,7 @@
                                 <sp:AvaPlot Name="cpuGraph" />
                             </DockPanel>
                         </Border>
-                        <Border Name="gpuCard" Grid.Column="2" Classes="card" ToolTip.Tip="How busy the GPU is, its busiest kind of work, and how much of its memory is in use">
+                        <Border Name="gpuCard" Grid.Column="2" Classes="card" ToolTip.Tip="How busy the GPU is and how much of its memory is in use">
                             <DockPanel>
                                 <TextBlock Name="gpuTitle" Text="GPU" />
                                 <sp:AvaPlot Name="gpuGraph" />
