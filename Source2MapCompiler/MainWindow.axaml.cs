@@ -58,6 +58,9 @@ public partial class MainWindow : Window
 
     private LightmapPreviewController? lightmapPreview;
 
+    private ResourceMonitor? resourceMonitor;
+    private ResourceGraph? cpuHistory, memoryHistory, gpuHistory;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -93,13 +96,38 @@ public partial class MainWindow : Window
         HelpSystemEventReg();
 
         Loaded += Form1_Load;
+        if (OperatingSystem.IsWindows())
+        {
+            // the colours Windows' Resource Monitor draws them in
+            cpuHistory = new ResourceGraph(cpuGraph, "#D04545");
+            memoryHistory = new ResourceGraph(memoryGraph, "#B8901A");
+            gpuHistory = new ResourceGraph(gpuGraph, "#1C8EA0");
+            resourceMonitor = new ResourceMonitor(usage => Dispatcher.UIThread.Post(() => ShowUsage(usage)));
+        }
+
         Closed += (_, _) =>
         {
             if (OperatingSystem.IsWindows())
             {
                 lightmapPreview?.Dispose();
+                resourceMonitor?.Dispose();
             }
         };
+    }
+
+    private void ShowUsage(ResourceUsage usage)
+    {
+        var memory = usage.RamGigabytes / usage.RamTotalGigabytes * 100;
+        var vram = usage.VramTotalGigabytes is { } total ? $"{usage.VramGigabytes:0.0} / {total:0.0} GB" : $"{usage.VramGigabytes:0.0} GB";
+
+        resourceGraphs.IsVisible = true;
+        gpuCard.IsVisible = usage.Gpu != null;
+        cpuTitle.Text = $"CPU – {usage.Cpu:0.0}%";
+        memoryTitle.Text = $"Memory – {memory:0.0}% ({usage.RamGigabytes:0.0} / {usage.RamTotalGigabytes:0} GB)";
+        gpuTitle.Text = $"GPU – {usage.Gpu:0.0}% ({vram})";
+        cpuHistory?.Add(usage.Cpu);
+        gpuHistory?.Add(usage.Gpu ?? 0);
+        memoryHistory?.Add(memory);
     }
 
     // Lists the games installed through Steam and picks the first, the one preferred
@@ -136,7 +164,7 @@ public partial class MainWindow : Window
         if (gameList.SelectedItem is ComboBoxItem { Tag: string folder })
         {
             cs2dir = folder;
-            gamedir.Text = cs2dir;
+            ToolTip.SetTip(gameList, cs2dir);
             await CS2Validator();
             UpdateArgLabel();
         }
@@ -211,25 +239,8 @@ public partial class MainWindow : Window
             return;
         }
         button1.IsEnabled = false;
-
-        if (File.Exists(Path.Combine(outputpath, Path.GetFileNameWithoutExtension(mapname) + ".vpk")))
-        {
-            if (await MessageDialog.AskAsync(this, MessageKind.Info, "Source2 Map Compiler", "Do you want to overwrite the existing map file?", "Overwrite"))
-            {
-                arg = ArgumentBuilder() + string.Format(null, "\"{0}\"", outputpath);
-                compileTask = ProcessThread();
-            }
-            else
-            {
-                Log("(Source2MapCompiler) Compile Cancelled! - " + DateTime.Now + "\n", LogKind.Error);
-                button1.IsEnabled = true;
-            }
-        }
-        else
-        {
-            arg = ArgumentBuilder() + string.Format(null, "\"{0}\"", outputpath);
-            compileTask = ProcessThread();
-        }
+        arg = ArgumentBuilder() + string.Format(null, "\"{0}\"", outputpath);
+        compileTask = ProcessThread();
     }
 
     /// <summary>
@@ -462,14 +473,49 @@ public partial class MainWindow : Window
         }
     }
 
+    // resourcecompiler puts what it builds under the output root at the map's path below the content folder, so
+    // content\csgo_addons\x\maps\x.vmap becomes <output>\csgo_addons\x\maps\x.vpk. Null for a map list, which builds
+    // several, or a map outside a content folder
+    private string? CompiledMapPath()
+    {
+        if (mappath == null || outputpath == null || IsTextFile(mappath))
+        {
+            return null;
+        }
+
+        for (var folder = Directory.GetParent(mappath); folder != null; folder = folder.Parent)
+        {
+            if (folder.Name.Equals("content", StringComparison.OrdinalIgnoreCase))
+            {
+                return Path.Combine(outputpath, Path.ChangeExtension(Path.GetRelativePath(folder.FullName, mappath), ".vpk"));
+            }
+        }
+
+        return null;
+    }
+
+    // Where the map will be written, or the output root when that can't be known
+    private void ShowOutput()
+    {
+        ShowPath(outputdir, CompiledMapPath() ?? outputpath ?? "N/A");
+    }
+
+    // A path shortened in the middle to fit its line, so the whole of it is in its tooltip
+    private static void ShowPath(SelectableTextBlock label, string path)
+    {
+        label.Text = path;
+        ToolTip.SetTip(label, path);
+    }
+
     private void SetMap(string file)
     {
         mappath = file;
         mapname = Path.GetFileName(file);
         addonname = Directory.GetParent(file)!.Parent!.Name;
         outputpath = Directory.GetParent(cs2dir!)!.Parent!.FullName;
-        mapLabel.Text = mappath;
-        outputdir.Text = outputpath;
+        ShowPath(mapLabel, mappath);
+        ShowOutput();
+        Title = $"Source2 Map Compiler – {Path.GetFileNameWithoutExtension(file)}";
         button5.IsEnabled = true;
         UseMapPresets(Remembered(() => MapPresets.Load(file)));
         UpdateArgLabel();
@@ -557,7 +603,7 @@ public partial class MainWindow : Window
         if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } folder)
         {
             outputpath = folder;
-            outputdir.Text = outputpath;
+            ShowOutput();
         }
     }
 
@@ -1098,7 +1144,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, string> _helpText = new Dictionary<string, string>
     {
         {"labelCancel", "Cancel build."},
-        {"labelCustomPath", "Override game path."},
+        {"labelCustomPath", "Pick a game's executable yourself, for a game Steam doesn't know of."},
         {"labelgamestatus", "The game to compile with, from the Source 2 games installed through Steam and any picked with Custom Path."},
         {"labeltoolstatus", "Current tools status. resourcecompiler.exe must be present."},
         {"labeloverrideoutput", "Override map vpk output path."},

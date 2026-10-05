@@ -4,6 +4,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="using:Source2MapCompiler"
         xmlns:ae="using:AvaloniaEdit"
+        xmlns:sp="using:ScottPlot.Avalonia"
         mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="900"
         x:Class="Source2MapCompiler.MainWindow"
         Title="Source2 Map Compiler"
@@ -265,6 +266,7 @@
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" Margin="12,0" VerticalAlignment="Center">
                     <TextBlock Text="Game" VerticalAlignment="Center" Foreground="{DynamicResource ContrastSoftBrush}" />
                     <ComboBox Name="gameList" Tag="labelgamestatus" PlaceholderText="Not Found" MinWidth="160" VerticalAlignment="Center" SelectionChanged="OnGameChanged" />
+                    <Button Name="button3" Tag="labelCustomPath" Content="Custom path" VerticalAlignment="Center" Click="button3_Click" />
                     <TextBlock Text="Tools" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource ContrastSoftBrush}" />
                     <Border Name="wststatusPill" Classes="pill missing">
                         <TextBlock Name="wststatus" Tag="labeltoolstatus" Text="Not Found" />
@@ -323,25 +325,49 @@
                 <!-- what is compiled where, with what, and what it says -->
                 <DockPanel Grid.Column="2" Margin="0,0,0,8">
                     <Border DockPanel.Dock="Top" Classes="card" Margin="0,0,0,8">
-                        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,8,Auto,8,Auto">
+                        <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,4,Auto,10,Auto,Auto">
                             <TextBlock Classes="label" Text="Map:" />
-                            <SelectableTextBlock Name="mapLabel" Grid.Column="1" Grid.ColumnSpan="2" Classes="value" Text="N/A" />
+                            <SelectableTextBlock Name="mapLabel" Grid.Column="1" Classes="value" Text="N/A" TextWrapping="NoWrap" TextTrimming="PathSegmentEllipsis" />
 
                             <TextBlock Grid.Row="2" Classes="label" Text="Output:" />
-                            <SelectableTextBlock Name="outputdir" Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Classes="value" Text="N/A" />
+                            <SelectableTextBlock Name="outputdir" Grid.Row="2" Grid.Column="1" Classes="value" Text="N/A" TextWrapping="NoWrap" TextTrimming="PathSegmentEllipsis" />
 
-                            <TextBlock Grid.Row="4" Classes="label" Text="Game dir:" />
-                            <SelectableTextBlock Name="gamedir" Grid.Row="4" Grid.Column="1" Classes="value" Text="N/A" />
-                            <Button Name="button3" Grid.Row="4" Grid.Column="2" Margin="8,0,0,0" Tag="labelCustomPath" Content="Custom Path" Click="button3_Click" />
+                            <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Classes="heading" Text="Command line" />
+                            <SelectableTextBlock Name="cmdLine" Grid.Row="5" Grid.ColumnSpan="2" Classes="value" Text="N/A" FontFamily="Cascadia Mono,Consolas,Menlo,monospace" FontSize="12" />
                         </Grid>
                     </Border>
 
-                    <Border DockPanel.Dock="Top" Classes="card" Margin="0,0,0,8">
-                        <StackPanel>
-                            <TextBlock Classes="heading" Text="Command line" />
-                            <SelectableTextBlock Name="cmdLine" Classes="value" Text="N/A" FontFamily="Cascadia Mono,Consolas,Menlo,monospace" FontSize="12" />
-                        </StackPanel>
-                    </Border>
+                    <!-- how busy the machine is over the last minute, drawn by ScottPlot -->
+                    <Grid Name="resourceGraphs" DockPanel.Dock="Bottom" ColumnDefinitions="*,8,*,8,*" Height="110" Margin="0,8,0,0" IsVisible="False">
+                        <Grid.Styles>
+                            <Style Selector="Grid#resourceGraphs > Border > DockPanel > TextBlock">
+                                <Setter Property="DockPanel.Dock" Value="Top" />
+                                <Setter Property="Margin" Value="0,0,0,4" />
+                                <Setter Property="Foreground" Value="{DynamicResource ContrastBrush}" />
+                                <Setter Property="FontSize" Value="12" />
+                                <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                            </Style>
+                        </Grid.Styles>
+                        <Border Classes="card" ToolTip.Tip="How busy the CPU is, all of its cores together">
+                            <DockPanel>
+                                <TextBlock Name="cpuTitle" Text="CPU" />
+                                <sp:AvaPlot Name="cpuGraph" />
+                            </DockPanel>
+                        </Border>
+                        <Border Name="gpuCard" Grid.Column="2" Classes="card" ToolTip.Tip="How busy the GPU is, its busiest kind of work, and how much of its memory is in use">
+                            <DockPanel>
+                                <TextBlock Name="gpuTitle" Text="GPU" />
+                                <sp:AvaPlot Name="gpuGraph" />
+                            </DockPanel>
+                        </Border>
+                        <Border Grid.Column="4" Classes="card" ToolTip.Tip="How much of the memory is in use">
+                            <DockPanel>
+                                <TextBlock Name="memoryTitle" Text="Memory" />
+                                <sp:AvaPlot Name="memoryGraph" />
+                            </DockPanel>
+                        </Border>
+                       
+                    </Grid>
 
                     <Border Classes="card">
                         <DockPanel>
