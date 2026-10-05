@@ -240,6 +240,7 @@ public sealed class LightmapPreviewMonitor : IDisposable
             var block = atlas.BlockRegion(index);
             reader!.ReadBlock(lightmap, block, red, green, blue);
             atlas.IngestRows(block, red, green, blue);
+            atlas.UpdateAverageLuminance();
             atlas.SetDone(index);
             anyRead = true;
             Raise(atlas, block, index, LightmapPreviewStage.BlockDone);
@@ -406,6 +407,7 @@ public sealed class LightmapPreviewMonitor : IDisposable
                 MemoryMarshal.Cast<byte, ushort>(level.GetChannel("B").Data));
         }
 
+        atlas.UpdateAverageLuminance();
         return atlas;
 
         void Check(ReaderResult result)

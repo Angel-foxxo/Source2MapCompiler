@@ -1,4 +1,5 @@
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Source2MapCompiler.LightmapPreview;
 
@@ -18,13 +19,20 @@ public enum LightmapBlockState : byte
     Done,
 }
 
-// Holds every texel of the lightmap as half floats so the exposure can be changed later, and remembers for each block whether
-// vrad3 has baked it yet so the view can draw the grid. A texel with no colour is one no chart covers. The monitor fills it on
-// its own thread while the UI draws it, which is why everything locks
+// Holds every texel of the lightmap as half floats, the way the view uploads it to the GPU to be exposed and tonemapped
+// there, and remembers for each block whether vrad3 has baked it yet so the view can draw the grid. A texel no chart covers
+// has no colour and no alpha. The monitor fills it on its own thread while the view reads it on the render thread, which is
+// why everything locks
 public sealed class LightmapAtlas
 {
-    private readonly ushort[] hdr;
-    private readonly byte[] tonemap = new byte[65536];
+    // what a texel no chart covers counts as, and what s2v's auto exposure clamps the darkest texels to
+    private const float MinLuminance = 0.005f;
+
+    // half float 1.0, the alpha of a covered texel
+    private const ushort Opaque = 0x3C00;
+
+    // the texels as red, green, blue and alpha half floats
+    private readonly ushort[] rgba;
     private readonly LightmapBlockState[] blocks;
     private readonly Lock sync = new();
 
@@ -41,9 +49,7 @@ public sealed class LightmapAtlas
         BlocksY = (height + blockSize - 1) / blockSize;
 
         blocks = new LightmapBlockState[BlocksX * BlocksY];
-        hdr = new ushort[(long)width * height * 3];
-
-        SetExposure(0);
+        rgba = new ushort[(long)width * height * 4];
     }
 
     public int Width { get; }
@@ -58,7 +64,11 @@ public sealed class LightmapAtlas
 
     public int BlockCount => blocks.Length;
 
-    public float Exposure { get; private set; }
+    // goes up whenever texels change, so the view knows to upload them again
+    public int Version { get; private set; }
+
+    // the log average luminance of the covered texels, which auto exposure brings to middle grey
+    public float AverageLuminance { get; private set; } = 0.18f;
 
     public LightmapBlockState GetBlockState(int blockX, int blockY)
     {
@@ -108,76 +118,82 @@ public sealed class LightmapAtlas
         }
     }
 
-    // Both the live blocks and the filtered EXR come in through here, as half floats for each colour along the region's rows
+    // Both the live blocks and the EXRs come in through here, as half floats for each colour along the region's rows
     internal void IngestRows(PixelRegion texels, ReadOnlySpan<ushort> red, ReadOnlySpan<ushort> green, ReadOnlySpan<ushort> blue)
     {
         lock (sync)
         {
             for (var y = 0; y < texels.Height; y++)
             {
-                var o = ((long)(texels.Y + y) * Width + texels.X) * 3;
+                var o = ((long)(texels.Y + y) * Width + texels.X) * 4;
 
-                for (var x = 0; x < texels.Width; x++, o += 3)
+                for (var x = 0; x < texels.Width; x++, o += 4)
                 {
                     var i = y * texels.Width + x;
-                    hdr[o] = red[i];
-                    hdr[o + 1] = green[i];
-                    hdr[o + 2] = blue[i];
+                    rgba[o] = red[i];
+                    rgba[o + 1] = green[i];
+                    rgba[o + 2] = blue[i];
+                    rgba[o + 3] = (red[i] | green[i] | blue[i]) == 0 ? (ushort)0 : Opaque;
                 }
             }
+
+            Version++;
         }
     }
 
-    // Instead of tonemapping every texel again, the exposure goes into a lookup table with the final 8 bit value for each of the
-    // 65536 possible half floats. The change shows up the next time the pixels are rendered
-    public void SetExposure(float exposure)
+    // Works out the average the way s2v's auto exposure does, as the mean of each texel's log2 luminance, from a grid of about
+    // a million texels, which is plenty for an average and keeps an 8K lightmap quick. This runs on the monitor's thread
+    internal void UpdateAverageLuminance()
     {
+        var step = Math.Max(1, (int)Math.Sqrt((double)Width * Height / 1_000_000));
+        double sum = 0;
+        long count = 0;
+        var gather = new Lock();
+
         lock (sync)
         {
-            Exposure = exposure;
-            var scale = MathF.Pow(2, exposure);
-
-            for (var i = 0; i < tonemap.Length; i++)
+            Parallel.For(0, (Height + step - 1) / step, () => (Sum: 0.0, Count: 0L), (row, _, local) =>
             {
-                var value = (float)BitConverter.UInt16BitsToHalf((ushort)i) * scale;
-                tonemap[i] = float.IsFinite(value) && value > 0 ? (byte)Math.Clamp(LinearToSrgb(Aces(value)) * 255f + 0.5f, 0, 255) : (byte)0;
-            }
-        }
-    }
-
-    // Writes straight into the caller's bitmap through the lookup table
-    // This runs on the UI thread with the view's bitmap locked, so it must not wait on anything. A Parallel.For here made the
-    // UI thread wait for its workers, and while waiting Avalonia painted, which needs that bitmap, and the app deadlocked
-    public unsafe void Render(PixelRegion region, nint destination, int stride)
-    {
-        lock (sync)
-        {
-            for (var y = region.Y; y < region.Bottom; y++)
-            {
-                var row = new Span<uint>((void*)(destination + y * stride), Width);
-
-                for (var x = region.X; x < region.Right; x++)
+                for (var x = 0; x < Width; x += step)
                 {
-                    var o = ((long)y * Width + x) * 3;
+                    var o = ((long)row * step * Width + x) * 4;
 
-                    // Texels that aren't baked or covered show as a dark checkerboard
-                    row[x] = (hdr[o] | hdr[o + 1] | hdr[o + 2]) == 0
-                        ? ((x >> 3) + (y >> 3)) % 2 == 0 ? 0xFF1C1C1Cu : 0xFF242424u
-                        : 0xFF000000u | (uint)tonemap[hdr[o]] << 16 | (uint)tonemap[hdr[o + 1]] << 8 | tonemap[hdr[o + 2]];
+                    if (rgba[o + 3] != 0)
+                    {
+                        var luminance = 0.2125f * Half(rgba[o]) + 0.7154f * Half(rgba[o + 1]) + 0.0721f * Half(rgba[o + 2]);
+                        local.Sum += Math.Log2(Math.Max(luminance, MinLuminance));
+                        local.Count++;
+                    }
                 }
+
+                return local;
+            }, local =>
+            {
+                lock (gather)
+                {
+                    sum += local.Sum;
+                    count += local.Count;
+                }
+            });
+        }
+
+        AverageLuminance = count > 0 ? (float)Math.Pow(2, sum / count) : 0.18f;
+    }
+
+    // Hands the texels, rows of red, green, blue and alpha half floats, to the caller while nothing can change them
+    public unsafe void ReadPixels(Action<nint, int> read)
+    {
+        lock (sync)
+        {
+            fixed (ushort* pixels = rgba)
+            {
+                read((nint)pixels, Width * 4 * sizeof(ushort));
             }
         }
     }
 
-    // Krzysztof Narkowicz's fit of the ACES filmic curve
-    private static float Aces(float x)
+    private static float Half(ushort bits)
     {
-        return x * (2.51f * x + 0.03f) / (x * (2.43f * x + 0.59f) + 0.14f);
-    }
-
-    private static float LinearToSrgb(float x)
-    {
-        x = Math.Clamp(x, 0, 1);
-        return x <= 0.0031308f ? x * 12.92f : 1.055f * MathF.Pow(x, 1 / 2.4f) - 0.055f;
+        return (float)BitConverter.UInt16BitsToHalf(bits);
     }
 }

@@ -25,7 +25,7 @@
                     <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                         <CheckBox Name="BlocksBox" Content="Blocks" IsChecked="True" ToolTip.Tip="Outline the blocks vrad3 bakes the lightmap in" />
                         <TextBlock Text="Exposure" VerticalAlignment="Center" Foreground="{DynamicResource ContrastBrush}" />
-                        <Slider Name="ExposureSlider" Width="180" Minimum="-8" Maximum="8" Value="0" SmallChange="0.5" LargeChange="1" TickFrequency="1" IsSnapToTickEnabled="False" VerticalAlignment="Center" />
+                        <Slider Name="ExposureSlider" ToolTip.Tip="Stops brighter or darker than the auto exposure, which shows the lightmap's average brightness as middle grey" Width="180" Minimum="-8" Maximum="8" Value="0" SmallChange="0.5" LargeChange="1" TickFrequency="1" IsSnapToTickEnabled="False" VerticalAlignment="Center" />
                         <TextBlock Name="ExposureLabel" Width="40" Text="0.0" VerticalAlignment="Center" Foreground="{DynamicResource ContrastSoftBrush}" />
                     </StackPanel>
                 </DockPanel>

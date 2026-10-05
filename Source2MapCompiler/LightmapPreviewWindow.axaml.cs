@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Runtime.Versioning;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
-using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Source2MapCompiler.LightmapPreview;
 
@@ -25,13 +24,12 @@ public partial class LightmapPreviewWindow : Window
         if (update.IsNewAtlas || atlas != update.Atlas)
         {
             atlas = update.Atlas;
-            atlas.SetExposure((float)ExposureSlider.Value);
             View.SetAtlas(atlas);
             SaveButton.IsEnabled = true;
         }
         else
         {
-            View.Refresh(update.Pixels);
+            View.Refresh();
         }
 
         var count = update.Count;
@@ -52,17 +50,12 @@ public partial class LightmapPreviewWindow : Window
         Status.Text = message;
     }
 
+    // In stops from the auto exposure, which shows the lightmap's average brightness as middle grey the way Source 2 Viewer
+    // does. The GPU applies it as the lightmap is drawn, so it's instant at any size
     private void SetExposure(float exposure)
     {
         ExposureLabel.Text = exposure.ToString("+0.0;-0.0;0.0", CultureInfo.InvariantCulture);
-
-        if (atlas == null)
-        {
-            return;
-        }
-
-        atlas.SetExposure(exposure);
-        View.Refresh(new PixelRegion(0, 0, atlas.Width, atlas.Height));
+        View.Exposure = exposure;
     }
 
     private void OnFit(object? sender, RoutedEventArgs e)
@@ -72,7 +65,7 @@ public partial class LightmapPreviewWindow : Window
 
     private async void OnSave(object? sender, RoutedEventArgs e)
     {
-        if (View.Bitmap is not { } bitmap)
+        if (atlas == null)
         {
             return;
         }
@@ -91,6 +84,6 @@ public partial class LightmapPreviewWindow : Window
         }
 
         await using var stream = await file.OpenWriteAsync();
-        bitmap.Save(stream, PngBitmapEncoderOptions.Default);
+        await View.SavePng(stream);
     }
 }
