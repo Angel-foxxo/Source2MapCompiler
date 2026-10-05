@@ -51,7 +51,7 @@ internal sealed class CompileOption
     }
 
     // A value as the settings file keeps it
-    public string Format(object value)
+    public static string Format(object value)
     {
         return value is bool on ? on ? "1" : "0" : Convert.ToString(value, CultureInfo.InvariantCulture)!;
     }
@@ -102,9 +102,20 @@ internal sealed class OptionGroup
     public int Columns { get; init; } = 1;
 }
 
-// A user's preset keeps every option as it was last set while it was picked, in the settings file, where a built in one
-// only sets the options it's about
-internal sealed record Preset(string Name, string Help, string Description, IReadOnlyDictionary<string, object> Values, bool User = false);
+internal enum PresetKind
+{
+    BuiltIn, // only sets the options it's about
+    Custom, // each map's own mix of options, kept in the map's _compilepreset file
+    Profile, // a mix of options the user named, kept in the settings for every map
+}
+
+// A locked profile isn't changed by changing an option while it's picked, which moves to Custom instead, like a built in
+// preset does
+internal sealed record Preset(string Name, string Help, string Description, IReadOnlyDictionary<string, object> Values, PresetKind Kind = PresetKind.BuiltIn, bool Locked = false)
+{
+    // Custom and the profiles keep every option as it was last set while they were picked
+    public bool User => Kind != PresetKind.BuiltIn;
+}
 
 // The options' values, as the flags read them. Options a game doesn't have aren't in it. An option's flags get the values
 // for that option, so On(), Choice() and Number() with no id are its own value
@@ -272,17 +283,26 @@ internal static class CompileOptions
     ];
 
     // picked when the options match none of the presets
-    public static readonly Preset Custom = new("Custom", "Your own mix of options. Changing any option picks this, or the preset it matches", "Your own mix of options", new Dictionary<string, object>(), User: true);
+    public static readonly Preset Custom = new("Custom", "Your own mix of options. Changing any option picks this, or the preset it matches", "Your own mix of options", new Dictionary<string, object>(), PresetKind.Custom);
+
+    public static Preset Profile(string name, IReadOnlyDictionary<string, object> values, bool locked)
+    {
+        var description = locked
+            ? "Your own profile, locked. Changing an option moves to Custom, unlock the profile to change it"
+            : "Your own profile, unlocked. Changing an option while it's picked saves it into the profile";
+
+        return new(name, "Your own profile, which every map can use", description, values, PresetKind.Profile, locked);
+    }
 
     public static IEnumerable<CompileOption> All => Groups.SelectMany(g => g.Switch is { } s ? [s, .. g.Options] : g.Options).Append(EntitiesOnly);
 
-    // A user's preset as the settings file keeps it
+    // Custom or a profile as its file keeps it
     public static Dictionary<string, string> ToText(IReadOnlyDictionary<string, object> values)
     {
-        return All.Where(o => values.ContainsKey(o.Id)).ToDictionary(o => o.Id, o => o.Format(values[o.Id]));
+        return All.Where(o => values.ContainsKey(o.Id)).ToDictionary(o => o.Id, o => CompileOption.Format(values[o.Id]));
     }
 
-    // A user's preset read back from the settings file, without anything that isn't an option or a value it can have
+    // Custom or a profile read back from its file, without anything that isn't an option or a value it can have
     public static Dictionary<string, object> FromText(IReadOnlyDictionary<string, string> text)
     {
         return All

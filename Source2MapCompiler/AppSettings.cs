@@ -23,6 +23,7 @@ public sealed class AppSettings
     private const string ThemeKey = "theme";
     private const string AccentKey = "accent";
     private const string MapKey = "map";
+    private const string ProfilesKey = "profiles";
 
     /// <summary>Where the settings are kept, under the user's application data folder: %AppData% on Windows, ~/.config on Linux.</summary>
     public static string FilePath { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Source2MapCompiler", FileName);
@@ -47,6 +48,9 @@ public sealed class AppSettings
 
     // the map last opened, or null when none has been
     public string? Map { get; set; }
+
+    // the user's profiles by name, in the order they were made, each as option ids and their values written out
+    public Dictionary<string, Dictionary<string, string>> Profiles { get; } = [];
 
     /// <summary>Everything the file holds, so what this version does not know survives a save.</summary>
     private KVObject data = KVObject.Collection();
@@ -90,6 +94,11 @@ public sealed class AppSettings
             settings.Map = path;
         }
 
+        if (settings.data.TryGetValue(ProfilesKey, out var profiles))
+        {
+            MapPresets.ReadPresets(profiles, settings.Profiles);
+        }
+
         return settings;
     }
 
@@ -110,9 +119,14 @@ public sealed class AppSettings
             saved.Add(MapKey, Map);
         }
 
+        if (Profiles.Count > 0)
+        {
+            saved.Add(ProfilesKey, MapPresets.WritePresets(Profiles));
+        }
+
         foreach (var child in data.Children)
         {
-            if (child.Key is not (VersionKey or ThemeKey or AccentKey or MapKey))
+            if (child.Key is not (VersionKey or ThemeKey or AccentKey or MapKey or ProfilesKey))
             {
                 saved.Add(child.Key, child.Value);
             }

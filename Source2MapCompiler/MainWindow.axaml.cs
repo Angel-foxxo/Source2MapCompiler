@@ -86,8 +86,8 @@ public partial class MainWindow : Window
         // the compiler prints faster than lines can be shown one by one, so what it printed is shown a few times a second
         new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Background, (_, _) => FlushLog()).Start();
 
-        presets = [.. CompileOptions.Presets, CompileOptions.Custom];
-        ShowPresetList();
+        var profiles = LoadSettings()?.Profiles.Select(p => CompileOptions.Profile(p.Key, CompileOptions.FromText(p.Value), p.Value.GetValueOrDefault(ProfileLockedKey) != "0")) ?? [];
+        SetPresets(CompileOptions.Custom, profiles);
         presetList.SelectionChanged += OnPresetChanged;
         BuildOptions();
         HelpSystemEventReg();
@@ -568,8 +568,11 @@ public partial class MainWindow : Window
     // each group's card, and the panel of its options that its switch greys out
     private readonly List<(OptionGroup Group, Border Card, Panel? Options)> cards = [];
 
-    // the built in presets, then the user's, which for now is only Custom
-    private Preset[] presets;
+    // the built in presets, the map's Custom, then the user's profiles
+    private Preset[] presets = [];
+
+    // kept with a profile's options in the settings, which no option has as its id
+    private const string ProfileLockedKey = "locked";
 
     // the name of the preset picked, which is picked again when the options are rebuilt for another game
     private string? pickedPreset;
@@ -605,23 +608,26 @@ public partial class MainWindow : Window
             column.Children.Add(BuildCard(group));
         }
 
-        if (presets.FirstOrDefault(p => p.Name == pickedPreset) is { } picked)
-        {
-            ApplyPreset(picked);
-        }
-
-        SelectMatchingPreset();
+        PickAgain(pickedPreset);
         UpdateArgLabel();
     }
 
-    // A user's preset with the options it was left with for the map
-    private static Preset UserPreset(Preset preset, MapPresets? stored)
+    // Custom with the options it was left with for the map
+    private static Preset MapCustom(MapPresets? stored)
     {
-        return stored?.Presets.GetValueOrDefault(preset.Name) is { } options ? preset with { Values = CompileOptions.FromText(options) } : preset;
+        var custom = CompileOptions.Custom;
+        return stored?.Presets.GetValueOrDefault(custom.Name) is { } options ? custom with { Values = CompileOptions.FromText(options) } : custom;
     }
 
-    private void ShowPresetList()
+    private Preset? SelectedPreset => presetList.SelectedIndex >= 0 ? presets[presetList.SelectedIndex] : null;
+
+    private Preset Custom => presets.First(p => p.Kind == PresetKind.Custom);
+
+    private IEnumerable<Preset> Profiles => presets.Where(p => p.Kind == PresetKind.Profile);
+
+    private void SetPresets(Preset custom, IEnumerable<Preset> profiles)
     {
+        presets = [.. CompileOptions.Presets, custom, .. profiles];
         selectingPreset = true;
         presetList.Items.Clear();
 
@@ -639,16 +645,129 @@ public partial class MainWindow : Window
     // Custom of its own that starts from them
     private void UseMapPresets(MapPresets? stored)
     {
-        presets = [.. CompileOptions.Presets, UserPreset(CompileOptions.Custom, stored)];
-        ShowPresetList();
+        SetPresets(MapCustom(stored), [.. Profiles]);
+        PickAgain(stored?.Preset);
+    }
 
-        if (stored?.Preset is { } name && presets.FirstOrDefault(p => p.Name == name) is { } picked)
+    // Picks a preset again, after the options are rebuilt for another game or another map is opened. A profile stays picked,
+    // anything else moves to the preset the options match, as it would have when they were set
+    private void PickAgain(string? name)
+    {
+        var picked = presets.FirstOrDefault(p => p.Name == name);
+
+        if (picked != null)
         {
             pickedPreset = name;
             ApplyPreset(picked);
         }
 
+        if (picked?.Kind == PresetKind.Profile)
+        {
+            ShowPicked(picked);
+        }
+        else
+        {
+            SelectMatchingPreset();
+        }
+    }
+
+    // Moves the list to a preset without applying it
+    private void ShowPicked(Preset preset)
+    {
+        selectingPreset = true;
+        presetList.SelectedIndex = Array.IndexOf(presets, preset);
+        selectingPreset = false;
+        UpdateStages();
+    }
+
+    private async void OnNewProfile(object? sender, RoutedEventArgs e)
+    {
+        if (await AskProfileName("New profile", "Name the profile. It starts with the options as they are now, and every map can use it.", "Create", "Profile name") is not { } name)
+        {
+            return;
+        }
+
+        var profile = CompileOptions.Profile(name, new Dictionary<string, object>(values), locked: true);
+        SetPresets(Custom, [.. Profiles, profile]);
+        ShowPicked(profile);
+        SaveProfiles();
+        RememberPreset();
+    }
+
+    private async void OnRenameProfile(object? sender, RoutedEventArgs e)
+    {
+        if (SelectedPreset is not { Kind: PresetKind.Profile } profile || await AskProfileName("Rename profile", $"Rename the profile {profile.Name} to", "Rename", profile.Name) is not { } name)
+        {
+            return;
+        }
+
+        var renamed = profile with { Name = name };
+        SetPresets(Custom, Profiles.Select(p => p == profile ? renamed : p));
+        ShowPicked(renamed);
+        SaveProfiles();
+        RememberPreset();
+    }
+
+    private void OnLockProfile(object? sender, RoutedEventArgs e)
+    {
+        if (SelectedPreset is not { Kind: PresetKind.Profile } profile)
+        {
+            return;
+        }
+
+        var changed = CompileOptions.Profile(profile.Name, profile.Values, lockProfileBox.IsChecked == true);
+        SetPresets(Custom, Profiles.Select(p => p == profile ? changed : p));
+        ShowPicked(changed);
+        SaveProfiles();
+    }
+
+    private async void OnDeleteProfile(object? sender, RoutedEventArgs e)
+    {
+        if (SelectedPreset is not { Kind: PresetKind.Profile } profile || !await MessageDialog.AskAsync(this, MessageKind.Danger, "Delete profile", $"Delete the profile {profile.Name}? Every map shares it, and this can't be undone.", "Delete"))
+        {
+            return;
+        }
+
+        SetPresets(Custom, Profiles.Where(p => p != profile));
+        SaveProfiles();
         SelectMatchingPreset();
+        UpdateStages();
+        RememberPreset();
+    }
+
+    // A profile's name, which can't be empty or be any preset's already, or null when none was given
+    private async Task<string?> AskProfileName(string title, string message, string confirm, string placeholder)
+    {
+        var name = (await MessageDialog.AskTextAsync(this, MessageKind.Info, title, message, confirm, placeholder))?.Trim();
+
+        if (string.IsNullOrEmpty(name))
+        {
+            return null;
+        }
+
+        if (presets.Any(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase)))
+        {
+            await MessageDialog.ShowAsync(this, MessageKind.Warning, title, $"There's already a preset called {name}.");
+            return null;
+        }
+
+        return name;
+    }
+
+    // The profiles are kept in the settings, in the order they were made, for every map to use
+    private void SaveProfiles()
+    {
+        SaveSettings(settings =>
+        {
+            settings.Profiles.Clear();
+
+            foreach (var profile in Profiles)
+            {
+                var text = CompileOptions.ToText(profile.Values);
+                text[ProfileLockedKey] = profile.Locked ? "1" : "0";
+                settings.Profiles[profile.Name] = text;
+            }
+        });
     }
 
     private Border BuildCard(OptionGroup group)
@@ -822,7 +941,11 @@ public partial class MainWindow : Window
 
         if (!applyingPreset)
         {
-            SelectMatchingPreset();
+            if (SelectedPreset is not { Kind: PresetKind.Profile, Locked: false })
+            {
+                SelectMatchingPreset();
+            }
+
             UpdateStages();
             RememberPreset();
         }
@@ -885,9 +1008,9 @@ public partial class MainWindow : Window
         UpdateArgLabel();
     }
 
-    // Remembers the preset picked for the map, and when it's the user's, the options it's now left with, so both come back
-    // with the map. Only the user's own changes get here, not the list moving to the preset the options match. Without a map
-    // there's nowhere to keep them
+    // Remembers the preset picked for the map, and for Custom or a profile, the options it's now left with, so they come back
+    // with the map. Custom is kept in the map's file and the profiles in the settings. Only the user's own changes get here,
+    // not the list moving to the preset the options match. Without a map only the profiles are kept
     private void RememberPreset()
     {
         if (presetList.SelectedIndex < 0)
@@ -897,7 +1020,8 @@ public partial class MainWindow : Window
 
         var preset = presets[presetList.SelectedIndex];
 
-        if (preset.User)
+        // a locked profile is left as it is, even by picking it, which would otherwise fill in the options it doesn't have
+        if (preset is { User: true, Locked: false })
         {
             // options this game doesn't have keep what they were set to for the games that do
             var kept = new Dictionary<string, object>(preset.Values);
@@ -912,6 +1036,11 @@ public partial class MainWindow : Window
 
         pickedPreset = preset.Name;
 
+        if (preset is { Kind: PresetKind.Profile, Locked: false })
+        {
+            SaveProfiles();
+        }
+
         if (mappath is not { } map)
         {
             return;
@@ -922,7 +1051,7 @@ public partial class MainWindow : Window
             var stored = MapPresets.Load(map) ?? new MapPresets();
             stored.Preset = preset.Name;
 
-            if (preset.User)
+            if (preset.Kind == PresetKind.Custom)
             {
                 stored.Presets[preset.Name] = CompileOptions.ToText(preset.Values);
             }
@@ -956,7 +1085,9 @@ public partial class MainWindow : Window
             }
         }
 
-        presetNote.Text = presetList.SelectedIndex >= 0 ? presets[presetList.SelectedIndex].Description : null;
+        presetNote.Text = SelectedPreset?.Description;
+        renameProfileButton.IsEnabled = deleteProfileButton.IsEnabled = lockProfileBox.IsEnabled = SelectedPreset?.Kind == PresetKind.Profile;
+        lockProfileBox.IsChecked = SelectedPreset is { Kind: PresetKind.Profile, Locked: true };
     }
 
     private readonly Dictionary<string, string> _helpText = new Dictionary<string, string>

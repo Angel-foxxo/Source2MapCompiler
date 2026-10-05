@@ -285,9 +285,29 @@
                     <StackPanel Spacing="8" Margin="0,0,14,8">
                         <Border Classes="card">
                             <StackPanel>
-                                <TextBlock Classes="heading" Text="Preset" />
-                                <ListBox Name="presetList" Classes="segmented" Margin="0,4,0,0" />
-                                <TextBlock Name="presetNote" Classes="note" Margin="0,8,0,2" />
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4">
+                                        <CheckBox Name="lockProfileBox" Content="Locked" Click="OnLockProfile" IsEnabled="False" Margin="0,0,8,0" ToolTip.Tip="While the profile is locked, changing an option moves to Custom instead of changing the profile" ToolTip.ShowOnDisabled="True" />
+                                        <Button Content="New profile" Click="OnNewProfile" ToolTip.Tip="Save the options as they are now as a profile every map can use. It starts locked" />
+                                        <Button Name="renameProfileButton" Content="Rename" Click="OnRenameProfile" IsEnabled="False" ToolTip.Tip="Rename the profile that's picked" ToolTip.ShowOnDisabled="True" />
+                                        <Button Name="deleteProfileButton" Content="Delete" Click="OnDeleteProfile" IsEnabled="False" ToolTip.Tip="Delete the profile that's picked" ToolTip.ShowOnDisabled="True" />
+                                    </StackPanel>
+                                    <TextBlock Classes="heading" Text="Preset" Margin="0" VerticalAlignment="Center" />
+                                </DockPanel>
+                                <!-- the built in presets and Custom fill the first row, the user's profiles wrap onto more -->
+                                <ListBox Name="presetList" Classes="segmented" Margin="0,8,0,0">
+                                    <ListBox.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="5" />
+                                        </ItemsPanelTemplate>
+                                    </ListBox.ItemsPanel>
+                                    <ListBox.Styles>
+                                        <Style Selector="ListBoxItem">
+                                            <Setter Property="Margin" Value="0,0,4,4" />
+                                        </Style>
+                                    </ListBox.Styles>
+                                </ListBox>
+                                <TextBlock Name="presetNote" Classes="note" Margin="0,4,0,2" />
                             </StackPanel>
                         </Border>
 
