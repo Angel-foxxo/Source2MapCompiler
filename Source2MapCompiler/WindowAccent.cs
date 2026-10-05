@@ -1,9 +1,11 @@
+using System.Linq;
 using System.Runtime.CompilerServices;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Media;
 using Avalonia.Styling;
+using Avalonia.Themes.Fluent;
 using Avalonia.Threading;
 
 namespace Source2MapCompiler;
@@ -53,6 +55,17 @@ public static class WindowAccent
     /// <summary>The theme's brushes a window paints in its own colours, by the keys they hold in the theme.</summary>
     private static readonly string[] PaintedBrushes = ["AccentBrush", "PopupBrush", "OutlineBrush"];
 
+    // Fluent's accent and the shades it makes of it, lighter and darker, which come from the system rather than the app
+    private static readonly string[] FluentAccents =
+    [
+        "SystemAccentColor",
+        "SystemAccentColorLight1", "SystemAccentColorLight2", "SystemAccentColorLight3",
+        "SystemAccentColorDark1", "SystemAccentColorDark2", "SystemAccentColorDark3",
+    ];
+
+    // how far each of those shades is from the accent in lightness
+    private static readonly double[] FluentShadeSteps = [0, 0.1, 0.2, 0.3, -0.1, -0.2, -0.3];
+
     /// <summary>What each window has: the dictionary its colouring lives in, swapped whole so the window is told once, and whether a repaint is already on its way.</summary>
     private sealed class State
     {
@@ -65,6 +78,10 @@ public static class WindowAccent
 
     /// <summary>The theme's keys that hold one of the painted brushes, found once per theme variant since the theme does not change.</summary>
     private static readonly Dictionary<ThemeVariant, List<(object Key, SolidColorBrush Brush)>> ThemeKeys = [];
+
+    // Fluent's keys coloured with one of its accent shades, by the shade's place in FluentAccents, and whether the key holds
+    // the colour itself rather than a brush, found once per theme variant
+    private static readonly Dictionary<ThemeVariant, List<(object Key, int Shade, bool IsColor)>> FluentKeys = [];
 
     static WindowAccent()
     {
@@ -81,6 +98,18 @@ public static class WindowAccent
     private static void ApplyLater(Window window)
     {
         var state = States.GetValue(window, _ => new State());
+
+        // a window's first colouring goes in straight away, as it's set up, so the window is never drawn without it and then
+        // changes colour in front of the user. Only a change to colouring it already has needs to wait
+        if (state.Own == null)
+        {
+            if (window.IsSet(ColorProperty))
+            {
+                Apply(window, state, GetColor(window));
+            }
+
+            return;
+        }
 
         if (state.Pending)
         {
@@ -146,6 +175,24 @@ public static class WindowAccent
             ["AccentButtonBackgroundPressed"] = pressed,
             ["AccentButtonBorderBrushPressed"] = pressed,
         };
+
+        // Fluent paints check boxes, switches, sliders, radio buttons and selections in its own accent, which is the system's,
+        // so they're painted in shades of this one. These go in first, so the keys set below have the last word
+        var shades = FluentShadeSteps.Select(step => Shift(accent, light ? -step : step)).ToArray();
+        var shadeBrushes = shades.Select(colour => new SolidColorBrush(colour)).ToArray();
+
+        for (var i = 0; i < FluentAccents.Length; i++)
+        {
+            own[FluentAccents[i]] = shades[i];
+        }
+
+        foreach (var (key, index, isColor) in FluentKeysOf(application, variant))
+        {
+            if (!own.ContainsKey(key))
+            {
+                own[key] = isColor ? shades[index] : shadeBrushes[index];
+            }
+        }
 
         var onFace = new SolidColorBrush(Contrast.TextOn(face));
 
@@ -246,6 +293,68 @@ public static class WindowAccent
         ThemeKeys[variant] = keys;
 
         return keys;
+    }
+
+    // The keys Fluent colours with one of its accent shades, found by their colour, so there's no list of them to keep up with
+    // Fluent
+    private static List<(object Key, int Shade, bool IsColor)> FluentKeysOf(Application application, ThemeVariant variant)
+    {
+        if (FluentKeys.TryGetValue(variant, out var keys))
+        {
+            return keys;
+        }
+
+        var shades = FluentAccents.Select(name => application.TryFindResource(name, variant, out var found) && found is Color color ? color : (Color?)null).ToArray();
+        var names = new HashSet<object>();
+
+        foreach (var fluent in application.Styles.OfType<FluentTheme>())
+        {
+            Collect(fluent.Resources);
+        }
+
+        keys = [];
+
+        foreach (var key in names.Where(key => key is not string name || !FluentAccents.Contains(name)))
+        {
+            if (!application.TryFindResource(key, variant, out var value))
+            {
+                continue;
+            }
+
+            var color = value switch
+            {
+                ISolidColorBrush brush => brush.Color,
+                Color plain => plain,
+                _ => (Color?)null,
+            };
+
+            if (color != null && Array.IndexOf(shades, color) is var shade and >= 0)
+            {
+                keys.Add((key, shade, value is Color));
+            }
+        }
+
+        FluentKeys[variant] = keys;
+
+        return keys;
+
+        void Collect(IResourceDictionary dictionary)
+        {
+            names.UnionWith(dictionary.Keys);
+
+            foreach (var merged in dictionary.MergedDictionaries.OfType<IResourceDictionary>())
+            {
+                Collect(merged);
+            }
+
+            foreach (var themed in new[] { variant, ThemeVariant.Default })
+            {
+                if (dictionary.ThemeDictionaries.TryGetValue(themed, out var provider) && provider is IResourceDictionary inner)
+                {
+                    Collect(inner);
+                }
+            }
+        }
     }
 
     /// <summary>The colour <paramref name="amount"/> of the way from <paramref name="from"/> to <paramref name="to"/>.</summary>

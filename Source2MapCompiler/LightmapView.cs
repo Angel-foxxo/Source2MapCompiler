@@ -36,6 +36,9 @@ public sealed class LightmapView : Control
     public LightmapView()
     {
         ClipToBounds = true;
+
+        // the window's accent arrives after it opens, and changes with the settings
+        ResourcesChanged += (_, _) => SendFrame();
     }
 
     public bool ShowBlocks
@@ -222,7 +225,10 @@ public sealed class LightmapView : Control
         }
 
         visual.Size = new Vector(Bounds.Width, Bounds.Height);
-        visual.SendHandlerMessage(new LightmapVisual.Frame(atlas, exposure, zoom, offset, ShowBlocks));
+        // the block being baked is outlined in the window's accent, like everything else the app highlights. The outline is
+        // thin, so it wears the accent boosted off the background the way a rating's stars do
+        var accent = (this.TryFindResource("StarBrush", ActualThemeVariant, out var brush) || this.TryFindResource("AccentBrush", ActualThemeVariant, out brush)) && brush is ISolidColorBrush solid ? solid.Color : Colors.Gold;
+        visual.SendHandlerMessage(new LightmapVisual.Frame(atlas, exposure, zoom, offset, ShowBlocks, new SKColor(accent.R, accent.G, accent.B, accent.A)));
     }
 }
 
@@ -232,14 +238,14 @@ public sealed class LightmapView : Control
 [SupportedOSPlatform("windows")]
 internal sealed class LightmapVisual : CompositionCustomVisualHandler
 {
-    public sealed record Frame(LightmapAtlas? Atlas, float Exposure, double Zoom, Point Offset, bool ShowBlocks);
+    public sealed record Frame(LightmapAtlas? Atlas, float Exposure, double Zoom, Point Offset, bool ShowBlocks, SKColor Baking);
 
     public static readonly object Release = new();
 
     private static readonly TimeSpan UploadInterval = TimeSpan.FromMilliseconds(500);
 
     private static readonly SKPaint BlockPaint = new() { Color = new SKColor(255, 255, 255, 77), Style = SKPaintStyle.Stroke, StrokeWidth = 1 };
-    private static readonly SKPaint BakingPaint = new() { Color = SKColors.Gold, Style = SKPaintStyle.Stroke, StrokeWidth = 2 };
+    private static readonly SKPaint BakingPaint = new() { Style = SKPaintStyle.Stroke, StrokeWidth = 2 };
     private static readonly SKPaint PendingPaint = new() { Color = new SKColor(0, 0, 0, 89) };
 
     private Frame? frame;
@@ -344,6 +350,7 @@ internal sealed class LightmapVisual : CompositionCustomVisualHandler
                 // The block being baked gets outlined even when the grid is hidden
                 if (state == LightmapBlockState.Baking)
                 {
+                    BakingPaint.Color = current.Baking;
                     canvas.DrawRect(rect, BakingPaint);
                 }
                 else if (current.ShowBlocks)

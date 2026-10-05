@@ -82,7 +82,8 @@
     <!-- windows: main colour with contrast text -->
     <SolidColorBrush x:Key="SystemRegionBrush" Color="{DynamicResource AppColor}" />
     <SolidColorBrush x:Key="SystemControlForegroundBaseHighBrush" Color="{DynamicResource ContrastColor}" />
-    <StaticResource x:Key="SystemAccentColor" ResourceKey="AccentColor" />
+    <!-- Fluent's own accent, SystemAccentColor and its lighter and darker shades, is the system's, and each window paints
+         everything Fluent colours with it in the window's accent instead, see WindowAccent -->
 
     <!-- buttons: a tinted face that brightens under the pointer and turns accent when pressed -->
     <StaticResource x:Key="ButtonBackground" ResourceKey="ControlBrush" />
