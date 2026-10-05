@@ -273,7 +273,12 @@ public partial class MainWindow : Window
 
             if (OperatingSystem.IsWindows() && BakesLightmapsOnGpu() && Vrad3Folder() is { } vrad3Folder)
             {
-                lightmapPreview ??= new LightmapPreviewController(this, message => Log("(Source2MapCompiler) " + message + "\n", LogKind.App));
+                if (lightmapPreview == null)
+                {
+                    lightmapPreview = new LightmapPreviewController(this, message => Log("(Source2MapCompiler) " + message + "\n", LogKind.App));
+                    lightmapPreview.Available += (_, _) => lightmapPreviewButton.IsEnabled = true;
+                }
+
                 lightmapPreview.Start(process.Id, vrad3Folder);
             }
 
@@ -1214,6 +1219,14 @@ public partial class MainWindow : Window
     private void OnSelectAllLog(object? sender, RoutedEventArgs e)
     {
         logEditor.SelectAll();
+    }
+
+    private void OnShowLightmapPreview(object? sender, RoutedEventArgs e)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            lightmapPreview?.Show();
+        }
     }
 
     private void OnClearLog(object? sender, RoutedEventArgs e)

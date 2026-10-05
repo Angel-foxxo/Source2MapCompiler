@@ -347,6 +347,7 @@
                         <DockPanel>
                             <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="4">
+                                    <Button Name="lightmapPreviewButton" Content="Lightmap preview" Click="OnShowLightmapPreview" IsEnabled="False" ToolTip.Tip="Open the lightmap preview again, showing the bake as it goes or the last one" ToolTip.ShowOnDisabled="True" />
                                     <Button Content="Copy" Click="OnCopyLog" ToolTip.Tip="Copy the selected text, or the whole log when nothing is selected" />
                                     <Button Content="Clear" Click="OnClearLog" />
                                 </StackPanel>
