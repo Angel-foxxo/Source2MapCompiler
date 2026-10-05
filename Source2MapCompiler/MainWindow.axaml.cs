@@ -59,6 +59,22 @@ public partial class MainWindow : Window
     private LightmapPreviewController? lightmapPreview;
 
     private ResourceMonitor? resourceMonitor;
+
+    // how far the compile running has got, and the line it's still printing, which comes in on the output's thread
+    private CompileProgress? progress;
+    private Stopwatch progressClock = new();
+    private string unfinishedLine = "";
+
+    // the reader ends the line it was printing and starts the next at once, so the log takes both at once too
+    private readonly System.Threading.Lock logLock = new();
+
+    // where the line still being printed starts in the log, and its coloured runs, which go when the log next changes. -1
+    // when there's none shown
+    private int liveStart = -1;
+    private int liveSpans;
+    private bool emptyBeforeLive;
+    private string shownLive = "";
+
     private ResourceGraph? cpuHistory, memoryHistory, gpuHistory;
 
     public MainWindow()
@@ -78,6 +94,8 @@ public partial class MainWindow : Window
         logEditor.TextArea.Caret.CaretBrush = Brushes.Transparent;
         // an editor lets its text scroll up past its end, a log stops at its last line
         logEditor.Options.AllowScrollBelowDocument = false;
+        // nothing's undone in a log, and the line being printed is replaced many times a second
+        logEditor.Document.UndoStack.SizeLimit = 0;
         logEditor.Loaded += (_, _) =>
         {
             if (logEditor.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault() is { } viewer)
@@ -252,6 +270,10 @@ public partial class MainWindow : Window
         statusLabel.Text = "Compiling";
 
         var stopwatch = Stopwatch.StartNew();
+        progress = new CompileProgress(new OptionValues(values, game), Vrad3Folder());
+        progressClock = stopwatch;
+        compileBar.Value = 0;
+        compileBar.IsVisible = true;
         int exitCode;
 
         process = new Process();
@@ -293,7 +315,7 @@ public partial class MainWindow : Window
                 lightmapPreview.Start(process.Id, vrad3Folder);
             }
 
-            await Task.WhenAll(ReadCompilerOutput(process.StandardOutput), ReadCompilerOutput(process.StandardError), process.WaitForExitAsync());
+            await Task.WhenAll(ReadCompilerOutput(process.StandardOutput, true), ReadCompilerOutput(process.StandardError, false), process.WaitForExitAsync());
             exitCode = process.ExitCode;
         }
         catch (Exception exception) when (exception is Win32Exception or InvalidOperationException)
@@ -307,6 +329,8 @@ public partial class MainWindow : Window
             process.Dispose();
             process = null;
             button1.IsEnabled = true;
+            progress = null;
+            compileBar.IsVisible = false;
 
             if (OperatingSystem.IsWindows())
             {
@@ -354,8 +378,9 @@ public partial class MainWindow : Window
     }
 
     // With -html resourcecompiler ends its lines with <br/> instead of newlines, so its output is read as it comes and split
-    // there. That happens off the UI thread, which picks the lines up from the queue
-    private async Task ReadCompilerOutput(StreamReader reader)
+    // there. That happens off the UI thread, which picks the lines up from the queue. The line still being printed is shown
+    // too, as the dots of a step's bar come in long before its line ends
+    private async Task ReadCompilerOutput(StreamReader reader, bool printing)
     {
         var buffer = new char[4096];
         var unfinished = "";
@@ -366,15 +391,31 @@ public partial class MainWindow : Window
             var lines = (unfinished + new string(buffer, 0, read)).Split(["<br/>", "\r\n", "\n"], StringSplitOptions.None);
             unfinished = lines[^1];
 
-            foreach (var line in lines[..^1])
+            lock (logLock)
             {
-                pendingLines.Enqueue(LogLine.FromHtml(line));
+                foreach (var line in lines[..^1])
+                {
+                    pendingLines.Enqueue(LogLine.FromHtml(line));
+                }
+
+                if (printing)
+                {
+                    unfinishedLine = unfinished;
+                }
             }
         }
 
-        if (unfinished.Length > 0)
+        lock (logLock)
         {
-            pendingLines.Enqueue(LogLine.FromHtml(unfinished));
+            if (unfinished.Length > 0)
+            {
+                pendingLines.Enqueue(LogLine.FromHtml(unfinished));
+            }
+
+            if (printing)
+            {
+                unfinishedLine = "";
+            }
         }
     }
 
@@ -1201,27 +1242,81 @@ public partial class MainWindow : Window
         return new ImmutableSolidColorBrush(color);
     }
 
-    // Shows the lines printed since the last time, following them down when the log was already at its end
+    // Shows the lines printed since the last time, following them down when the log was already at its end, and how far the
+    // compile has got from them. The line still being printed goes last, in place of what it was the time before, so a
+    // step's bar fills in the way it does in a console
     private void FlushLog()
     {
-        if (pendingLines.IsEmpty)
+        List<LogLine> lines = [];
+        string live;
+
+        lock (logLock)
+        {
+            while (pendingLines.TryDequeue(out var line))
+            {
+                lines.Add(line);
+            }
+
+            live = unfinishedLine;
+        }
+
+        var liveLine = LogLine.FromHtml(WithoutOpenTag(live));
+
+        if (progress is { } compile)
+        {
+            lines.ForEach(line => compile.Line(line.Text));
+            compile.Partial(liveLine.Text);
+            compileBar.Value = compile.Overall * 100;
+            statusLabel.Text = $"{compile.Text}  ·  {progressClock.Elapsed:hh\\:mm\\:ss}";
+        }
+
+        if (lines.Count == 0 && live == shownLive)
         {
             return;
         }
 
-        var text = new StringBuilder();
+        var document = logEditor.Document;
+        document.BeginUpdate();
 
-        while (pendingLines.TryDequeue(out var line))
+        if (liveStart >= 0)
+        {
+            document.Remove(liveStart, document.TextLength - liveStart);
+            logSpans.RemoveRange(liveSpans, logSpans.Count - liveSpans);
+            logEmpty = emptyBeforeLive;
+            liveStart = -1;
+        }
+
+        var text = new StringBuilder();
+        lines.ForEach(Append);
+
+        if (liveLine.Text.Length > 0)
+        {
+            liveStart = document.TextLength + text.Length;
+            liveSpans = logSpans.Count;
+            emptyBeforeLive = logEmpty;
+            Append(liveLine);
+        }
+
+        shownLive = live;
+        document.Insert(document.TextLength, text.ToString());
+        document.EndUpdate();
+
+        void Append(LogLine line)
         {
             text.Append(logEmpty ? "" : "\n");
             logEmpty = false;
 
-            var start = logEditor.Document.TextLength + text.Length;
+            var start = document.TextLength + text.Length;
             logSpans.AddRange(line.Spans.Select(span => span with { Offset = start + span.Offset }));
             text.Append(line.Text);
         }
+    }
 
-        logEditor.Document.Insert(logEditor.Document.TextLength, text.ToString());
+    // A tag can arrive in pieces, and shows as text until its end does
+    private static string WithoutOpenTag(string html)
+    {
+        var open = html.LastIndexOf('<');
+        return open > html.LastIndexOf('>') ? html[..open] : html;
     }
 
     // Scrolling moves the log only when it's scrolled, so whether it's at the bottom then says whether to follow it. The text
@@ -1280,6 +1375,8 @@ public partial class MainWindow : Window
         logEditor.Document.Text = "";
         logSpans.Clear();
         logEmpty = true;
+        liveStart = -1;
+        shownLive = "";
         followLog = true;
     }
 }
