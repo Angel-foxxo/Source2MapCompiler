@@ -22,6 +22,7 @@ public sealed class AppSettings
     private const string VersionKey = "version";
     private const string ThemeKey = "theme";
     private const string AccentKey = "accent";
+    private const string MapKey = "map";
 
     /// <summary>Where the settings are kept, under the user's application data folder: %AppData% on Windows, ~/.config on Linux.</summary>
     public static string FilePath { get; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Source2MapCompiler", FileName);
@@ -43,6 +44,9 @@ public sealed class AppSettings
 
     /// <summary>The accent colour set over the theme's own, as #RRGGBB, or null for the theme's.</summary>
     public string? Accent { get; set; }
+
+    // the map last opened, or null when none has been
+    public string? Map { get; set; }
 
     /// <summary>Everything the file holds, so what this version does not know survives a save.</summary>
     private KVObject data = KVObject.Collection();
@@ -81,6 +85,11 @@ public sealed class AppSettings
             settings.Accent = hex;
         }
 
+        if (settings.data.TryGetValue(MapKey, out var map) && (string)map is { Length: > 0 } path)
+        {
+            settings.Map = path;
+        }
+
         return settings;
     }
 
@@ -96,9 +105,14 @@ public sealed class AppSettings
             saved.Add(AccentKey, Accent);
         }
 
+        if (Map != null)
+        {
+            saved.Add(MapKey, Map);
+        }
+
         foreach (var child in data.Children)
         {
-            if (child.Key is not (VersionKey or ThemeKey or AccentKey))
+            if (child.Key is not (VersionKey or ThemeKey or AccentKey or MapKey))
             {
                 saved.Add(child.Key, child.Value);
             }

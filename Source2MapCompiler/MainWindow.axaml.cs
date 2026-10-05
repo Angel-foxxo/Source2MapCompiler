@@ -21,6 +21,7 @@ using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using ValveKeyValue;
 using Wacton.Unicolour;
 
 namespace Source2MapCompiler;
@@ -122,6 +123,8 @@ public partial class MainWindow : Window
         {
             await CS2Validator();
         }
+
+        RestoreMap();
     }
 
     // Adds a game to the dropdown, with its folder as the tooltip, since two installs of a game share its name
@@ -448,14 +451,49 @@ public partial class MainWindow : Window
 
         if (files.Count > 0 && files[0].TryGetLocalPath() is { } file)
         {
-            mappath = file;
-            mapname = Path.GetFileName(file);
-            addonname = Directory.GetParent(file)!.Parent!.Name;
-            outputpath = Directory.GetParent(cs2dir)!.Parent!.FullName;
-            mapLabel.Text = mappath;
-            outputdir.Text = outputpath;
-            button5.IsEnabled = true;
-            UpdateArgLabel();
+            SetMap(file);
+            SaveMap(file);
+        }
+    }
+
+    private void SetMap(string file)
+    {
+        mappath = file;
+        mapname = Path.GetFileName(file);
+        addonname = Directory.GetParent(file)!.Parent!.Name;
+        outputpath = Directory.GetParent(cs2dir!)!.Parent!.FullName;
+        mapLabel.Text = mappath;
+        outputdir.Text = outputpath;
+        button5.IsEnabled = true;
+        UpdateArgLabel();
+    }
+
+    // Remembering the map is a convenience, so a settings file that can't be written doesn't stop it being opened
+    private static void SaveMap(string file)
+    {
+        try
+        {
+            var settings = AppSettings.Load();
+            settings.Map = file;
+            settings.Save();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or KeyValueException)
+        {
+        }
+    }
+
+    // The map opened last time, unless its file is gone, in which case there's none
+    private void RestoreMap()
+    {
+        try
+        {
+            if (cs2dir != null && AppSettings.Load().Map is { } file && File.Exists(file))
+            {
+                SetMap(file);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or KeyValueException)
+        {
         }
     }
 
