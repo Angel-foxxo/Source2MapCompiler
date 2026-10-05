@@ -86,13 +86,8 @@ public partial class MainWindow : Window
         // the compiler prints faster than lines can be shown one by one, so what it printed is shown a few times a second
         new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Background, (_, _) => FlushLog()).Start();
 
-        foreach (var preset in AllPresets)
-        {
-            var item = new ListBoxItem { Content = preset.Name };
-            ToolTip.SetTip(item, preset.Help);
-            presetList.Items.Add(item);
-        }
-
+        presets = [.. CompileOptions.Presets, CompileOptions.Custom];
+        ShowPresetList();
         presetList.SelectionChanged += OnPresetChanged;
         BuildOptions();
         HelpSystemEventReg();
@@ -452,7 +447,7 @@ public partial class MainWindow : Window
         if (files.Count > 0 && files[0].TryGetLocalPath() is { } file)
         {
             SetMap(file);
-            SaveMap(file);
+            SaveSettings(settings => settings.Map = file);
         }
     }
 
@@ -465,36 +460,57 @@ public partial class MainWindow : Window
         mapLabel.Text = mappath;
         outputdir.Text = outputpath;
         button5.IsEnabled = true;
+        UseMapPresets(Remembered(() => MapPresets.Load(file)));
         UpdateArgLabel();
-    }
-
-    // Remembering the map is a convenience, so a settings file that can't be written doesn't stop it being opened
-    private static void SaveMap(string file)
-    {
-        try
-        {
-            var settings = AppSettings.Load();
-            settings.Map = file;
-            settings.Save();
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or KeyValueException)
-        {
-        }
     }
 
     // The map opened last time, unless its file is gone, in which case there's none
     private void RestoreMap()
     {
+        if (cs2dir != null && LoadSettings()?.Map is { } file && File.Exists(file))
+        {
+            SetMap(file);
+        }
+    }
+
+    // Remembering the map and its presets is a convenience, so a file that can't be read or written doesn't stop anything, it
+    // just isn't remembered
+    private static T? Remembered<T>(Func<T?> read) where T : class
+    {
         try
         {
-            if (cs2dir != null && AppSettings.Load().Map is { } file && File.Exists(file))
-            {
-                SetMap(file);
-            }
+            return read();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or KeyValueException)
+        {
+            return null;
+        }
+    }
+
+    private static void Remember(Action write)
+    {
+        try
+        {
+            write();
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or KeyValueException)
         {
         }
+    }
+
+    private static AppSettings? LoadSettings()
+    {
+        return Remembered(AppSettings.Load);
+    }
+
+    private static void SaveSettings(Action<AppSettings> change)
+    {
+        Remember(() =>
+        {
+            var settings = AppSettings.Load();
+            change(settings);
+            settings.Save();
+        });
     }
 
     private async void button5_Click(object? sender, RoutedEventArgs e)
@@ -546,7 +562,11 @@ public partial class MainWindow : Window
     // each group's card, and the panel of its options that its switch greys out
     private readonly List<(OptionGroup Group, Border Card, Panel? Options)> cards = [];
 
-    private static readonly Preset[] AllPresets = [.. CompileOptions.Presets, CompileOptions.Custom];
+    // the built in presets, then the user's, which for now is only Custom
+    private Preset[] presets;
+
+    // the name of the preset picked, which is picked again when the options are rebuilt for another game
+    private string? pickedPreset;
 
     // set while a preset is applied, so its own changes don't pick a preset
     private bool applyingPreset;
@@ -579,8 +599,50 @@ public partial class MainWindow : Window
             column.Children.Add(BuildCard(group));
         }
 
+        if (presets.FirstOrDefault(p => p.Name == pickedPreset) is { } picked)
+        {
+            ApplyPreset(picked);
+        }
+
         SelectMatchingPreset();
         UpdateArgLabel();
+    }
+
+    // A user's preset with the options it was left with for the map
+    private static Preset UserPreset(Preset preset, MapPresets? stored)
+    {
+        return stored?.Presets.GetValueOrDefault(preset.Name) is { } options ? preset with { Values = CompileOptions.FromText(options) } : preset;
+    }
+
+    private void ShowPresetList()
+    {
+        selectingPreset = true;
+        presetList.Items.Clear();
+
+        foreach (var preset in presets)
+        {
+            var item = new ListBoxItem { Content = preset.Name };
+            ToolTip.SetTip(item, preset.Help);
+            presetList.Items.Add(item);
+        }
+
+        selectingPreset = false;
+    }
+
+    // Takes the map's presets and picks the one it was left with. A map with none yet keeps the options as they are, with a
+    // Custom of its own that starts from them
+    private void UseMapPresets(MapPresets? stored)
+    {
+        presets = [.. CompileOptions.Presets, UserPreset(CompileOptions.Custom, stored)];
+        ShowPresetList();
+
+        if (stored?.Preset is { } name && presets.FirstOrDefault(p => p.Name == name) is { } picked)
+        {
+            pickedPreset = name;
+            ApplyPreset(picked);
+        }
+
+        SelectMatchingPreset();
     }
 
     private Border BuildCard(OptionGroup group)
@@ -756,6 +818,7 @@ public partial class MainWindow : Window
         {
             SelectMatchingPreset();
             UpdateStages();
+            RememberPreset();
         }
 
         UpdateArgLabel();
@@ -791,8 +854,19 @@ public partial class MainWindow : Window
             return;
         }
 
-        var preset = AllPresets[presetList.SelectedIndex];
+        ApplyPreset(presets[presetList.SelectedIndex]);
+        RememberPreset();
+    }
+
+    private void ApplyPreset(Preset preset)
+    {
         applyingPreset = true;
+
+        // picking Custom straight from Entities only lets the stages be turned back on, unless it was left that way itself
+        if (preset.User)
+        {
+            SetValue(CompileOptions.EntitiesOnly.Id, false);
+        }
 
         // options the game doesn't have, like grid nav outside Dota, are left out
         foreach (var (id, value) in preset.Values.Where(v => values.ContainsKey(v.Key)))
@@ -800,24 +874,64 @@ public partial class MainWindow : Window
             SetValue(id, value);
         }
 
-        // picking Custom straight from Entities only lets the stages be turned back on
-        if (preset == CompileOptions.Custom)
-        {
-            SetValue(CompileOptions.EntitiesOnly.Id, false);
-        }
-
         applyingPreset = false;
         UpdateStages();
         UpdateArgLabel();
     }
 
+    // Remembers the preset picked for the map, and when it's the user's, the options it's now left with, so both come back
+    // with the map. Only the user's own changes get here, not the list moving to the preset the options match. Without a map
+    // there's nowhere to keep them
+    private void RememberPreset()
+    {
+        if (presetList.SelectedIndex < 0)
+        {
+            return;
+        }
+
+        var preset = presets[presetList.SelectedIndex];
+
+        if (preset.User)
+        {
+            // options this game doesn't have keep what they were set to for the games that do
+            var kept = new Dictionary<string, object>(preset.Values);
+
+            foreach (var (id, value) in values)
+            {
+                kept[id] = value;
+            }
+
+            presets[presetList.SelectedIndex] = preset = preset with { Values = kept };
+        }
+
+        pickedPreset = preset.Name;
+
+        if (mappath is not { } map)
+        {
+            return;
+        }
+
+        Remember(() =>
+        {
+            var stored = MapPresets.Load(map) ?? new MapPresets();
+            stored.Preset = preset.Name;
+
+            if (preset.User)
+            {
+                stored.Presets[preset.Name] = CompileOptions.ToText(preset.Values);
+            }
+
+            stored.Save(map);
+        });
+    }
+
     // Moves the preset list to the preset the options match, or to Custom when they match none
     private void SelectMatchingPreset()
     {
-        var match = Array.FindIndex(AllPresets, preset => preset != CompileOptions.Custom && preset.Values.All(v => !values.TryGetValue(v.Key, out var value) || Equals(value, v.Value)));
+        var match = Array.FindIndex(presets, preset => !preset.User && preset.Values.All(v => !values.TryGetValue(v.Key, out var value) || Equals(value, v.Value)));
 
         selectingPreset = true;
-        presetList.SelectedIndex = match >= 0 ? match : AllPresets.Length - 1;
+        presetList.SelectedIndex = match >= 0 ? match : Array.FindIndex(presets, preset => preset.Name == CompileOptions.Custom.Name);
         selectingPreset = false;
     }
 
@@ -836,7 +950,7 @@ public partial class MainWindow : Window
             }
         }
 
-        presetNote.Text = presetList.SelectedIndex >= 0 ? AllPresets[presetList.SelectedIndex].Description : null;
+        presetNote.Text = presetList.SelectedIndex >= 0 ? presets[presetList.SelectedIndex].Description : null;
     }
 
     private readonly Dictionary<string, string> _helpText = new Dictionary<string, string>

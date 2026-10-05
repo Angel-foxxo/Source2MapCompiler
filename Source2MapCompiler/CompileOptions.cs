@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using System.Linq;
 
@@ -48,6 +49,25 @@ internal sealed class CompileOption
     {
         return GameDefault(game) ?? Default ?? (Kind == OptionKind.Threads ? Environment.ProcessorCount : null);
     }
+
+    // A value as the settings file keeps it
+    public string Format(object value)
+    {
+        return value is bool on ? on ? "1" : "0" : Convert.ToString(value, CultureInfo.InvariantCulture)!;
+    }
+
+    // A value read back from the settings file, or null when it's not one this option can have, so an edited file or one
+    // from another version can't put a bad value in
+    public object? Parse(string text)
+    {
+        return Kind switch
+        {
+            OptionKind.Toggle or OptionKind.Hidden => text switch { "1" => true, "0" => false, _ => null },
+            OptionKind.Choice => Choices.Contains(text) ? text : null,
+            OptionKind.Threads => int.TryParse(text, CultureInfo.InvariantCulture, out var threads) && threads > 0 ? Math.Min(threads, Environment.ProcessorCount) : null,
+            _ => null,
+        };
+    }
 }
 
 internal enum GroupColumn
@@ -82,7 +102,9 @@ internal sealed class OptionGroup
     public int Columns { get; init; } = 1;
 }
 
-internal sealed record Preset(string Name, string Help, string Description, IReadOnlyDictionary<string, object> Values);
+// A user's preset keeps every option as it was last set while it was picked, in the settings file, where a built in one
+// only sets the options it's about
+internal sealed record Preset(string Name, string Help, string Description, IReadOnlyDictionary<string, object> Values, bool User = false);
 
 // The options' values, as the flags read them. Options a game doesn't have aren't in it. An option's flags get the values
 // for that option, so On(), Choice() and Number() with no id are its own value
@@ -250,9 +272,24 @@ internal static class CompileOptions
     ];
 
     // picked when the options match none of the presets
-    public static readonly Preset Custom = new("Custom", "Your own mix of options. Changing any option picks this, or the preset it matches", "Your own mix of options", new Dictionary<string, object>());
+    public static readonly Preset Custom = new("Custom", "Your own mix of options. Changing any option picks this, or the preset it matches", "Your own mix of options", new Dictionary<string, object>(), User: true);
 
     public static IEnumerable<CompileOption> All => Groups.SelectMany(g => g.Switch is { } s ? [s, .. g.Options] : g.Options).Append(EntitiesOnly);
+
+    // A user's preset as the settings file keeps it
+    public static Dictionary<string, string> ToText(IReadOnlyDictionary<string, object> values)
+    {
+        return All.Where(o => values.ContainsKey(o.Id)).ToDictionary(o => o.Id, o => o.Format(values[o.Id]));
+    }
+
+    // A user's preset read back from the settings file, without anything that isn't an option or a value it can have
+    public static Dictionary<string, object> FromText(IReadOnlyDictionary<string, string> text)
+    {
+        return All
+            .Select(o => (o.Id, Value: text.TryGetValue(o.Id, out var value) ? o.Parse(value) : null))
+            .Where(o => o.Value != null)
+            .ToDictionary(o => o.Id, o => o.Value!);
+    }
 
     // The options a game has, at their defaults
     public static Dictionary<string, object> DefaultsFor(Game game)
