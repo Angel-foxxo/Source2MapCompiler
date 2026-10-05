@@ -420,15 +420,21 @@ public partial class MainWindow : Window
             "steamtours_addons"
         };
 
-        IStorageFolder? initialDirectory = null;
+        // the folder of the map that's open, or else the game's addons
+        IStorageFolder? initialDirectory = Path.GetDirectoryName(mappath) is { } mapFolder && Directory.Exists(mapFolder)
+            ? await StorageProvider.TryGetFolderFromPathAsync(mapFolder)
+            : null;
 
-        foreach (string addonDir in addonDirectories)
+        if (initialDirectory == null)
         {
-            string path = Path.Combine(Directory.GetParent(cs2dir)!.Parent!.Parent!.FullName, "content", addonDir);
-            if (Directory.Exists(path))
+            foreach (string addonDir in addonDirectories)
             {
-                initialDirectory = await StorageProvider.TryGetFolderFromPathAsync(path);
-                break;
+                string path = Path.Combine(Directory.GetParent(cs2dir)!.Parent!.Parent!.FullName, "content", addonDir);
+                if (Directory.Exists(path))
+                {
+                    initialDirectory = await StorageProvider.TryGetFolderFromPathAsync(path);
+                    break;
+                }
             }
         }
 
