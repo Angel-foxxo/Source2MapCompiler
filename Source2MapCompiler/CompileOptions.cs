@@ -184,7 +184,7 @@ internal static class CompileOptions
         {
             Name = "Navigation",
             Column = GroupColumn.Left,
-            Note = "The nav mesh bots walk on",
+            Note = "The nav mesh needed for bots/NPCs to walk on. Also required for bomb damage calculation.",
             Switch = new() { Id = "navigation", Help = "Build navigation mesh for NPCs / CS Bots.", Default = true, GameDefault = g => g == Game.Dota2 ? false : null, Flags = o => o.On() ? ["-nav"] : [] },
             Options =
             [
