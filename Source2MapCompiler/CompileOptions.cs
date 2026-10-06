@@ -13,7 +13,6 @@ internal enum OptionKind
     Toggle, // a checkbox, or the switch in a group's header
     Choice, // one of a few values, all shown as buttons
     Threads, // a thread count, from one to all of them
-    Hidden, // only ever set by presets
 }
 
 internal sealed class CompileOption
@@ -62,7 +61,7 @@ internal sealed class CompileOption
     {
         return Kind switch
         {
-            OptionKind.Toggle or OptionKind.Hidden => text switch { "1" => true, "0" => false, _ => null },
+            OptionKind.Toggle => text switch { "1" => true, "0" => false, _ => null },
             OptionKind.Choice => Choices.Contains(text) ? text : null,
             OptionKind.Threads => int.TryParse(text, CultureInfo.InvariantCulture, out var threads) && threads > 0 ? Math.Min(threads, Environment.ProcessorCount) : null,
             _ => null,
@@ -93,7 +92,7 @@ internal sealed class OptionGroup
 
     public GroupColumn Column { get; init; }
 
-    // the compile's stages, which Entities only skips
+    // the compile's stages, which Entities only starts with off, all but the world
     public bool IsStage { get; init; } = true;
 
     public string FoldLabel { get; init; } = "Debug";
@@ -106,6 +105,7 @@ internal enum PresetKind
 {
     BuiltIn, // only sets the options it's about
     Custom, // each map's own mix of options, kept in the map's _compilepreset file
+    EntitiesOnly, // each map's own options for rebuilding the entities alone, kept like Custom
     Profile, // a mix of options the user named, kept in the settings for every map
 }
 
@@ -113,7 +113,7 @@ internal enum PresetKind
 // preset does
 internal sealed record Preset(string Name, string Help, string Description, IReadOnlyDictionary<string, object> Values, PresetKind Kind = PresetKind.BuiltIn, bool Locked = false)
 {
-    // Custom and the profiles keep every option as it was last set while they were picked
+    // Custom, Entities only and the profiles keep every option as it was last set while they were picked
     public bool User => Kind != PresetKind.BuiltIn;
 }
 
@@ -136,14 +136,9 @@ internal sealed class OptionValues(IReadOnlyDictionary<string, object> values, G
 
 internal static class CompileOptions
 {
-    // set only by the Entities only preset. It rebuilds the entities alone, so it replaces -world and greys out every stage
-    public static readonly CompileOption EntitiesOnly = new()
-    {
-        Id = "entitiesOnly",
-        Kind = OptionKind.Hidden,
-        Default = false,
-        Flags = o => o.On() ? ["-entities"] : [],
-    };
+    // set while Entities only is picked, which rebuilds the entities alone, so it replaces -world. It isn't an option of its
+    // own, so it isn't kept with Custom or a profile
+    public const string EntitiesOnlyId = "entitiesOnly";
 
     public static readonly OptionGroup[] Groups =
     [
@@ -151,7 +146,7 @@ internal static class CompileOptions
         {
             Name = "World",
             Column = GroupColumn.Left,
-            Switch = new() { Id = "world", Help = "Build world.", Default = true, Flags = o => o.On() && !o.On("entitiesOnly") ? ["-world"] : [] },
+            Switch = new() { Id = "world", Help = "Build world.", Default = true, Flags = o => o.On() && !o.On(EntitiesOnlyId) ? ["-world"] : [] },
             Options =
             [
                 new() { Id = "settlePhysics", Label = "Pre-settle physics objects", Help = "Runs physics on physics objects so they don't move when the map loads.", Default = true, Flags = o => o.On() ? [] : ["-nosettle"] },
@@ -269,17 +264,19 @@ internal static class CompileOptions
     public static readonly Preset[] Presets =
     [
         new("Fast", "Only meant for quickly checking things that don't depend on graphics fidelity.", "Build the world and physics, without vis, nav, lighting or audio",
-            Values(("entitiesOnly", false), ("physics", true), ("lighting", false), ("visibility", false), ("navigation", true), ("gridNav", true), ("steamAudio", false))),
+            Values(("physics", true), ("lighting", false), ("visibility", false), ("navigation", true), ("gridNav", true), ("steamAudio", false))),
 
         new("Full", "Decent for smaller maps, or for checking a bigger map in game or for a quick test.", "Everything, with standard quality lighting",
-            Values(("entitiesOnly", false), ("physics", true), ("lighting", true), ("resolution", "2048"), ("quality", "Standard"), ("visibility", true), ("navigation", true), ("gridNav", true), ("steamAudio", true), ("reverb", true), ("paths", true))),
+            Values(("physics", true), ("lighting", true), ("resolution", "2048"), ("quality", "Standard"), ("visibility", true), ("navigation", true), ("gridNav", true), ("steamAudio", true), ("reverb", true), ("paths", true))),
 
         new("Final", "Best quality lighting, especially important for medium and big sized levels like a CS2 5V5 level.", "Everything, with final quality lighting, for maps you ship",
-            Values(("entitiesOnly", false), ("physics", true), ("lighting", true), ("resolution", "8192"), ("quality", "Final"), ("visibility", true), ("navigation", true), ("gridNav", true), ("steamAudio", true), ("reverb", true), ("paths", true))),
-
-        new("Entities only", "Will rewrite the entity lumps in the map with new ones, without touching anything else, works with mesh entities too.", "Only the entities are rebuilt, every other stage is skipped",
-            Values(("entitiesOnly", true), ("physics", false), ("lighting", false), ("visibility", false), ("navigation", false), ("gridNav", false), ("steamAudio", false))),
+            Values(("physics", true), ("lighting", true), ("resolution", "8192"), ("quality", "Final"), ("visibility", true), ("navigation", true), ("gridNav", true), ("steamAudio", true), ("reverb", true), ("paths", true))),
     ];
+
+    // Rewrites the entity lumps and starts with every other stage off. Like Custom, what's changed while it's picked is kept
+    // in it for the map, so stages can be turned back on, all but the lighting
+    public static readonly Preset EntitiesOnly = new("Entities only", "Will rewrite the entity lumps in the map with new ones, without touching anything else, works with mesh entities too. Stages turned back on are kept for the map.", "Only the entities are rebuilt. Turn stages back on to build them too, all but the lighting",
+        Values(("physics", false), ("lighting", false), ("visibility", false), ("navigation", false), ("gridNav", false), ("steamAudio", false)), PresetKind.EntitiesOnly);
 
     // what a map starts with until it has a preset of its own
     public const string NewMapPreset = "Full";
@@ -296,7 +293,7 @@ internal static class CompileOptions
         return new(name, "Your own profile, which every map can use", description, values, PresetKind.Profile, locked);
     }
 
-    public static IEnumerable<CompileOption> All => Groups.SelectMany(g => g.Switch is { } s ? [s, .. g.Options] : g.Options).Append(EntitiesOnly);
+    public static IEnumerable<CompileOption> All => Groups.SelectMany(g => g.Switch is { } s ? [s, .. g.Options] : g.Options);
 
     // Custom or a profile as its file keeps it
     public static Dictionary<string, string> ToText(IReadOnlyDictionary<string, object> values)
@@ -326,7 +323,10 @@ internal static class CompileOptions
         var input = Path.GetExtension(mapPath)?.Equals(".txt", StringComparison.OrdinalIgnoreCase) == true ? "-filelist" : "-i";
         List<string> args = [$"-threads {o.Number("threads")}", "-fshallow", "-maxtextureres 256", "-dxlevel 110", "-quiet", "-html", "-unbufferedio", input, $"\"{mapPath}\"", "-noassert"];
 
-        args.AddRange(EntitiesOnly.Flags(o.For(EntitiesOnly)));
+        if (o.On(EntitiesOnlyId))
+        {
+            args.Add("-entities");
+        }
 
         foreach (var group in Groups)
         {

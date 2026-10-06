@@ -52,15 +52,14 @@ internal sealed partial class CompileProgress
     public CompileProgress(OptionValues options, string? vrad3Folder)
     {
         this.vrad3Folder = vrad3Folder;
-        var stages = !options.On(CompileOptions.EntitiesOnly.Id);
-        var lighting = stages && options.On("lighting");
+        var lighting = options.On("lighting");
 
         this.stages =
         [
             // from the start, before any marker
             new("Preparing", new("(?!)"), 20),
             new("Loading the map", new("^Building map \""), 10),
-            .. stages && options.On("visibility") ? [new Stage(Visibility, new("^Building map visibility"), 2400)] : Array.Empty<Stage>(),
+            .. options.On("visibility") ? [new Stage(Visibility, new("^Building map visibility"), 2400)] : Array.Empty<Stage>(),
             .. lighting
                 ? new Stage[]
                 {
@@ -72,8 +71,8 @@ internal sealed partial class CompileProgress
                 }
                 : [],
             new("Building the world's geometry", new("^Generate Overlay Meshes"), 10),
-            .. stages && options.On("physics") ? [new Stage("Building physics", new(@"^\.\.\. Building 'phys'"), 5)] : Array.Empty<Stage>(),
-            .. stages && options.On("navigation") ? [new Stage(Navigation, new(@"^\.\.\. Building 'nav'"), 40)] : Array.Empty<Stage>(),
+            .. options.On("physics") ? [new Stage("Building physics", new(@"^\.\.\. Building 'phys'"), 5)] : Array.Empty<Stage>(),
+            .. options.On("navigation") ? [new Stage(Navigation, new(@"^\.\.\. Building 'nav'"), 40)] : Array.Empty<Stage>(),
             new("Packing the map", new("Map build finished"), 10),
             new("Finishing", new("^ OK:"), 0),
         ];

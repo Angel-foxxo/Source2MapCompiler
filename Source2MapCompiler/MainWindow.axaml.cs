@@ -108,7 +108,7 @@ public partial class MainWindow : Window
         new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Background, (_, _) => FlushLog()).Start();
 
         var profiles = LoadSettings()?.Profiles.Select(p => CompileOptions.Profile(p.Key, CompileOptions.FromText(p.Value), p.Value.GetValueOrDefault(ProfileLockedKey) != "0")) ?? [];
-        SetPresets(CompileOptions.Custom, profiles);
+        SetPresets([CompileOptions.EntitiesOnly, CompileOptions.Custom], profiles);
         presetList.SelectionChanged += OnPresetChanged;
         BuildOptions();
         HelpSystemEventReg();
@@ -660,7 +660,7 @@ public partial class MainWindow : Window
     // each group's card, and the panel of its options that its switch greys out
     private readonly List<(OptionGroup Group, Border Card, Panel? Options)> cards = [];
 
-    // the built in presets, the map's Custom, then the user's profiles
+    // the built in presets, the map's own Entities only and Custom, then the user's profiles
     private Preset[] presets = [];
 
     // kept with a profile's options in the settings, which no option has as its id
@@ -704,22 +704,22 @@ public partial class MainWindow : Window
         UpdateArgLabel();
     }
 
-    // Custom with the options it was left with for the map
-    private static Preset MapCustom(MapPresets? stored)
+    // Entities only and Custom with the options they were left with for the map
+    private static Preset[] MapOwn(MapPresets? stored)
     {
-        var custom = CompileOptions.Custom;
-        return stored?.Presets.GetValueOrDefault(custom.Name) is { } options ? custom with { Values = CompileOptions.FromText(options) } : custom;
+        return [.. new[] { CompileOptions.EntitiesOnly, CompileOptions.Custom }.Select(preset => stored?.Presets.GetValueOrDefault(preset.Name) is { } options ? preset with { Values = CompileOptions.FromText(options) } : preset)];
     }
 
     private Preset? SelectedPreset => presetList.SelectedIndex >= 0 ? presets[presetList.SelectedIndex] : null;
 
-    private Preset Custom => presets.First(p => p.Kind == PresetKind.Custom);
+    // the map's own presets, Entities only and Custom
+    private Preset[] Own => [.. presets.Where(p => p.Kind is PresetKind.EntitiesOnly or PresetKind.Custom)];
 
     private IEnumerable<Preset> Profiles => presets.Where(p => p.Kind == PresetKind.Profile);
 
-    private void SetPresets(Preset custom, IEnumerable<Preset> profiles)
+    private void SetPresets(IEnumerable<Preset> own, IEnumerable<Preset> profiles)
     {
-        presets = [.. CompileOptions.Presets, custom, .. profiles];
+        presets = [.. CompileOptions.Presets, .. own, .. profiles];
         selectingPreset = true;
         presetList.Items.Clear();
 
@@ -737,7 +737,7 @@ public partial class MainWindow : Window
     // preset new maps get, rather than with what the map before it was left with
     private void UseMapPresets(MapPresets? stored)
     {
-        SetPresets(MapCustom(stored), [.. Profiles]);
+        SetPresets(MapOwn(stored), [.. Profiles]);
 
         if (stored == null)
         {
@@ -750,8 +750,8 @@ public partial class MainWindow : Window
         PickAgain(stored == null ? CompileOptions.NewMapPreset : stored.Preset);
     }
 
-    // Picks a preset again, after the options are rebuilt for another game or another map is opened. A profile stays picked,
-    // anything else moves to the preset the options match, as it would have when they were set
+    // Picks a preset again, after the options are rebuilt for another game or another map is opened. A profile or Entities
+    // only stays picked, anything else moves to the preset the options match, as it would have when they were set
     private void PickAgain(string? name)
     {
         var picked = presets.FirstOrDefault(p => p.Name == name);
@@ -762,7 +762,7 @@ public partial class MainWindow : Window
             ApplyPreset(picked);
         }
 
-        if (picked?.Kind == PresetKind.Profile)
+        if (picked is { Kind: PresetKind.Profile or PresetKind.EntitiesOnly })
         {
             ShowPicked(picked);
         }
@@ -788,9 +788,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        // a profile can't be Entities only, so one made from it builds what it had turned on
+        SetValue(CompileOptions.EntitiesOnlyId, false);
         var profile = CompileOptions.Profile(name, new Dictionary<string, object>(values), locked: true);
-        SetPresets(Custom, [.. Profiles, profile]);
+        SetPresets(Own, [.. Profiles, profile]);
         ShowPicked(profile);
+        UpdateArgLabel();
         SaveProfiles();
         RememberPreset();
     }
@@ -803,7 +806,7 @@ public partial class MainWindow : Window
         }
 
         var renamed = profile with { Name = name };
-        SetPresets(Custom, Profiles.Select(p => p == profile ? renamed : p));
+        SetPresets(Own, Profiles.Select(p => p == profile ? renamed : p));
         ShowPicked(renamed);
         SaveProfiles();
         RememberPreset();
@@ -817,7 +820,7 @@ public partial class MainWindow : Window
         }
 
         var changed = CompileOptions.Profile(profile.Name, profile.Values, lockProfileBox.IsChecked == true);
-        SetPresets(Custom, Profiles.Select(p => p == profile ? changed : p));
+        SetPresets(Own, Profiles.Select(p => p == profile ? changed : p));
         ShowPicked(changed);
         SaveProfiles();
     }
@@ -829,7 +832,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        SetPresets(Custom, Profiles.Where(p => p != profile));
+        SetPresets(Own, Profiles.Where(p => p != profile));
         SaveProfiles();
         SelectMatchingPreset();
         UpdateStages();
@@ -1042,7 +1045,8 @@ public partial class MainWindow : Window
 
         if (!applyingPreset)
         {
-            if (SelectedPreset is not { Kind: PresetKind.Profile, Locked: false })
+            // an unlocked profile and Entities only keep what's changed, anything else moves to what the options match
+            if (SelectedPreset is not ({ Kind: PresetKind.Profile, Locked: false } or { Kind: PresetKind.EntitiesOnly }))
             {
                 SelectMatchingPreset();
             }
@@ -1091,12 +1095,7 @@ public partial class MainWindow : Window
     private void ApplyPreset(Preset preset)
     {
         applyingPreset = true;
-
-        // picking Custom straight from Entities only lets the stages be turned back on, unless it was left that way itself
-        if (preset.User)
-        {
-            SetValue(CompileOptions.EntitiesOnly.Id, false);
-        }
+        SetValue(CompileOptions.EntitiesOnlyId, preset.Kind == PresetKind.EntitiesOnly);
 
         // options the game doesn't have, like grid nav outside Dota, are left out
         foreach (var (id, value) in preset.Values.Where(v => values.ContainsKey(v.Key)))
@@ -1110,7 +1109,7 @@ public partial class MainWindow : Window
     }
 
     // Remembers the preset picked for the map, and for Custom or a profile, the options it's now left with, so they come back
-    // with the map. Custom is kept in the map's file and the profiles in the settings. Only the user's own changes get here,
+    // with the map. Custom and Entities only are kept in the map's file and the profiles in the settings. Only the user's own changes get here,
     // not the list moving to the preset the options match. Without a map only the profiles are kept
     private void RememberPreset()
     {
@@ -1152,7 +1151,7 @@ public partial class MainWindow : Window
             var stored = MapPresets.Load(map) ?? new MapPresets();
             stored.Preset = preset.Name;
 
-            if (preset.Kind == PresetKind.Custom)
+            if (preset.Kind is PresetKind.Custom or PresetKind.EntitiesOnly)
             {
                 stored.Presets[preset.Name] = CompileOptions.ToText(preset.Values);
             }
@@ -1171,14 +1170,27 @@ public partial class MainWindow : Window
         selectingPreset = false;
     }
 
-    // Greys out the options of a group that's switched off, and every stage while Entities only is picked
+    // Greys out the options of a group that's switched off, and the lighting while Entities only is picked
     private void UpdateStages()
     {
+        // the lighting can't be baked with Entities only, so it's kept off and greyed out while that's picked
+        var entitiesOnly = values.GetValueOrDefault(CompileOptions.EntitiesOnlyId) is true;
+
+        if (entitiesOnly && values.GetValueOrDefault("lighting") is true)
+        {
+            SetValue("lighting", false);
+        }
+
         var options = new OptionValues(values, game);
 
         foreach (var (group, card, panel) in cards)
         {
-            card.IsEnabled = !(group.IsStage && options.On(CompileOptions.EntitiesOnly.Id));
+            if (group.Switch?.Id == "lighting")
+            {
+                card.IsEnabled = !entitiesOnly;
+                ToolTip.SetTip(card, entitiesOnly ? "Lighting can't be baked with Entities only" : null);
+                ToolTip.SetShowOnDisabled(card, true);
+            }
 
             if (panel != null && group.Switch is { } toggle)
             {

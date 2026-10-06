@@ -17,7 +17,7 @@ internal sealed class MapPresets
     // the name of the preset last picked, or null when none has been
     public string? Preset { get; set; }
 
-    // the map's own presets by name, which is only Custom, as option ids and their values written out
+    // the map's own presets by name, Custom and Entities only, as option ids and their values written out
     public Dictionary<string, Dictionary<string, string>> Presets { get; } = [];
 
     public static string PathFor(string map)
