@@ -264,7 +264,7 @@ internal static class CompileOptions
     public static readonly Preset[] Presets =
     [
         new("Fast", "Only meant for quickly checking things that don't depend on graphics fidelity.", "Build the world and physics, without vis, nav, lighting or audio",
-            Values(("physics", true), ("lighting", false), ("visibility", false), ("navigation", true), ("gridNav", true), ("steamAudio", false))),
+            Values(("physics", true), ("lighting", false), ("visibility", false), ("navigation", false), ("gridNav", true), ("steamAudio", false))),
 
         new("Full", "Decent for smaller maps, or for checking a bigger map in game or for a quick test.", "Everything, with standard quality lighting",
             Values(("physics", true), ("lighting", true), ("resolution", "2048"), ("quality", "Standard"), ("visibility", true), ("navigation", true), ("gridNav", true), ("steamAudio", true), ("reverb", true), ("paths", true))),

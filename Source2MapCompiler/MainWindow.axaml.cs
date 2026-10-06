@@ -556,7 +556,7 @@ public partial class MainWindow : Window
         outputpath = Directory.GetParent(cs2dir!)!.Parent!.FullName;
         ShowPath(mapLabel, mappath);
         ShowOutput();
-        Title = $"Source2 Map Compiler – {Path.GetFileNameWithoutExtension(file)}";
+        Title = $"Source2 Map Compiler - {Path.GetFileNameWithoutExtension(file)}";
         button5.IsEnabled = true;
         UseMapPresets(Remembered(() => MapPresets.Load(file)));
         UpdateArgLabel();
@@ -666,8 +666,9 @@ public partial class MainWindow : Window
     // kept with a profile's options in the settings, which no option has as its id
     private const string ProfileLockedKey = "locked";
 
-    // the name of the preset picked, which is picked again when the options are rebuilt for another game
-    private string? pickedPreset;
+    // the name of the preset picked, which is picked again when the options are rebuilt for another game. Until a map is
+    // opened it's the one new maps get
+    private string? pickedPreset = CompileOptions.NewMapPreset;
 
     // set while a preset is applied, so its own changes don't pick a preset
     private bool applyingPreset;

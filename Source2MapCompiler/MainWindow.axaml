@@ -241,18 +241,6 @@
             <!-- the compile's actions, whether the game and tools are there, and the settings -->
             <Grid DockPanel.Dock="Top" Margin="8,6" ColumnDefinitions="Auto,*,Auto,Auto">
                 <StackPanel Orientation="Horizontal" Spacing="4">
-                    <Button Name="button4" Classes="tool" Tag="labelopenvmap" Click="button4_Click">
-                        <StackPanel>
-                            <Image Source="avares://Source2MapCompiler/assets/buttons/open.png" RenderOptions.BitmapInterpolationMode="HighQuality" />
-                            <TextBlock Text="Open .vmap" />
-                        </StackPanel>
-                    </Button>
-                    <Button Name="button5" Classes="tool" Tag="labeloverrideoutput" IsEnabled="False" Click="button5_Click">
-                        <StackPanel>
-                            <Image Source="avares://Source2MapCompiler/assets/buttons/output.png" RenderOptions.BitmapInterpolationMode="HighQuality" />
-                            <TextBlock Text="Change Output" />
-                        </StackPanel>
-                    </Button>
                     <Button Name="button1" Classes="tool" Tag="labelCompile" Click="button1_Click">
                         <StackPanel>
                             <Image Source="avares://Source2MapCompiler/assets/buttons/compile.png" RenderOptions.BitmapInterpolationMode="HighQuality" />
@@ -263,6 +251,18 @@
                         <StackPanel>
                             <Image Source="avares://Source2MapCompiler/assets/buttons/cancel.png" RenderOptions.BitmapInterpolationMode="HighQuality" />
                             <TextBlock Text="Cancel" />
+                        </StackPanel>
+                    </Button>
+                    <Button Name="button4" Classes="tool" Tag="labelopenvmap" Click="button4_Click">
+                        <StackPanel>
+                            <Image Source="avares://Source2MapCompiler/assets/buttons/open.png" RenderOptions.BitmapInterpolationMode="HighQuality" />
+                            <TextBlock Text="Open .vmap" />
+                        </StackPanel>
+                    </Button>
+                    <Button Name="button5" Classes="tool" Tag="labeloverrideoutput" IsEnabled="False" Click="button5_Click">
+                        <StackPanel>
+                            <Image Source="avares://Source2MapCompiler/assets/buttons/output.png" RenderOptions.BitmapInterpolationMode="HighQuality" />
+                            <TextBlock Text="Change Output" />
                         </StackPanel>
                     </Button>
                 </StackPanel>
