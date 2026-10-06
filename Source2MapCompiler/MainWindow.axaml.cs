@@ -15,8 +15,10 @@ using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Media.Immutable;
 using Avalonia.LogicalTree;
+using Avalonia.Platform;
 using Avalonia.Platform.Storage;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -726,12 +728,41 @@ public partial class MainWindow : Window
 
         foreach (var preset in presets)
         {
-            var item = new ListBoxItem { Content = preset.Name };
+            var item = new ListBoxItem { Content = PresetContent(preset) };
             ToolTip.SetTip(item, preset.Help);
             presetList.Items.Add(item);
         }
 
         selectingPreset = false;
+    }
+
+    // A preset's name, under its icon when it has one, as the toolbar's buttons have theirs
+    private static Control PresetContent(Preset preset)
+    {
+        var name = new TextBlock { Text = preset.Name, HorizontalAlignment = HorizontalAlignment.Center };
+
+        if (preset.Icon == null)
+        {
+            return name;
+        }
+
+        var icon = new Image { Source = PresetIcon(preset.Icon), Width = 28, Height = 28 };
+        RenderOptions.SetBitmapInterpolationMode(icon, BitmapInterpolationMode.HighQuality);
+        return new StackPanel { Spacing = 3, Children = { icon, name } };
+    }
+
+    // each preset icon, loaded once, as the preset list is rebuilt whenever a map is opened
+    private static readonly Dictionary<string, Bitmap> presetIcons = [];
+
+    private static Bitmap PresetIcon(string icon)
+    {
+        if (!presetIcons.TryGetValue(icon, out var bitmap))
+        {
+            using var stream = AssetLoader.Open(new Uri($"avares://Source2MapCompiler/assets/buttons/preset_{icon}.png"));
+            presetIcons[icon] = bitmap = new Bitmap(stream);
+        }
+
+        return bitmap;
     }
 
     // Takes the map's presets and picks the one it was left with. A map with none yet starts over from the defaults, with the

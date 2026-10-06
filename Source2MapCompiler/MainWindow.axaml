@@ -310,6 +310,8 @@
                                     <ListBox.Styles>
                                         <Style Selector="ListBoxItem">
                                             <Setter Property="Margin" Value="0,0,4,4" />
+                                            <!-- the grid makes every cell as tall as the ones with icons, which the profiles' names sit in the middle of -->
+                                            <Setter Property="VerticalContentAlignment" Value="Center" />
                                         </Style>
                                     </ListBox.Styles>
                                 </ListBox>

@@ -115,6 +115,9 @@ internal sealed record Preset(string Name, string Help, string Description, IRea
 {
     // Custom, Entities only and the profiles keep every option as it was last set while they were picked
     public bool User => Kind != PresetKind.BuiltIn;
+
+    // the name of its icon in assets\buttons, preset_<icon>.png, or null for none, which the profiles have
+    public string? Icon { get; init; }
 }
 
 // The options' values, as the flags read them. Options a game doesn't have aren't in it. An option's flags get the values
@@ -264,25 +267,25 @@ internal static class CompileOptions
     public static readonly Preset[] Presets =
     [
         new("Fast", "Only meant for quickly checking things that don't depend on graphics fidelity.", "Build the world and physics, without vis, nav, lighting or audio",
-            Values(("physics", true), ("lighting", false), ("visibility", false), ("navigation", false), ("gridNav", true), ("steamAudio", false))),
+            Values(("physics", true), ("lighting", false), ("visibility", false), ("navigation", false), ("gridNav", true), ("steamAudio", false))) { Icon = "fast" },
 
         new("Full", "Decent for smaller maps, or for checking a bigger map in game or for a quick test.", "Everything, with standard quality lighting",
-            Values(("physics", true), ("lighting", true), ("resolution", "2048"), ("quality", "Standard"), ("visibility", true), ("navigation", true), ("gridNav", true), ("steamAudio", true), ("reverb", true), ("paths", true))),
+            Values(("physics", true), ("lighting", true), ("resolution", "2048"), ("quality", "Standard"), ("visibility", true), ("navigation", true), ("gridNav", true), ("steamAudio", true), ("reverb", true), ("paths", true))) { Icon = "full" },
 
         new("Final", "Best quality lighting, especially important for medium and big sized levels like a CS2 5V5 level.", "Everything, with final quality lighting, for maps you ship",
-            Values(("physics", true), ("lighting", true), ("resolution", "8192"), ("quality", "Final"), ("visibility", true), ("navigation", true), ("gridNav", true), ("steamAudio", true), ("reverb", true), ("paths", true))),
+            Values(("physics", true), ("lighting", true), ("resolution", "8192"), ("quality", "Final"), ("visibility", true), ("navigation", true), ("gridNav", true), ("steamAudio", true), ("reverb", true), ("paths", true))) { Icon = "final" },
     ];
 
     // Rewrites the entity lumps and starts with every other stage off. Like Custom, what's changed while it's picked is kept
     // in it for the map, so stages can be turned back on, all but the lighting
     public static readonly Preset EntitiesOnly = new("Entities only", "Will rewrite the entity lumps in the map with new ones, without touching anything else, works with mesh entities too. Stages turned back on are kept for the map.", "Only the entities are rebuilt. Turn stages back on to build them too, all but the lighting",
-        Values(("physics", false), ("lighting", false), ("visibility", false), ("navigation", false), ("gridNav", false), ("steamAudio", false)), PresetKind.EntitiesOnly);
+        Values(("physics", false), ("lighting", false), ("visibility", false), ("navigation", false), ("gridNav", false), ("steamAudio", false)), PresetKind.EntitiesOnly) { Icon = "entity" };
 
     // what a map starts with until it has a preset of its own
     public const string NewMapPreset = "Full";
 
     // picked when the options match none of the presets
-    public static readonly Preset Custom = new("Custom", "Your own mix of options. Changing any option picks this, or the preset it matches", "Your own mix of options", new Dictionary<string, object>(), PresetKind.Custom);
+    public static readonly Preset Custom = new("Custom", "Your own mix of options. Changing any option picks this, or the preset it matches", "Your own mix of options", new Dictionary<string, object>(), PresetKind.Custom) { Icon = "custom" };
 
     public static Preset Profile(string name, IReadOnlyDictionary<string, object> values, bool locked)
     {
