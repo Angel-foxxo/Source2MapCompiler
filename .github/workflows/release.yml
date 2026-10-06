@@ -95,16 +95,18 @@ jobs:
       contents: write # create the release
 
     steps:
+    # a single artifact is extracted straight into the path, without a folder of its own
     - name: Download artifacts
       uses: actions/download-artifact@v8
       with:
+        name: Source2MapCompiler-windows-x64
         path: artifacts
 
     - name: Create release files
       run: |
        set -eux
        mkdir release
-       zip -9j release/Source2MapCompiler-windows-x64.zip artifacts/Source2MapCompiler-windows-x64/*
+       zip -9j release/Source2MapCompiler-windows-x64.zip artifacts/*
 
     - name: Display structure of archived files
       run: ls -Rl
