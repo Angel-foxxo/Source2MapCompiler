@@ -12,10 +12,10 @@
     <AnalysisMode Condition="'$(Configuration)' != 'Release'">Recommended</AnalysisMode>
     <Nullable>enable</Nullable>
 
-    <!-- the one place the version lives -->
+    <!-- the one place the version lives, the release workflow tags and publishes whatever stands here -->
     <Version>2.0.0</Version>
 
-    <RepositoryUrl>https://github.com/dirtkiller23/CS2ResourceCompiler</RepositoryUrl>
+    <RepositoryUrl>https://github.com/Angel-foxxo/Source2MapCompiler</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 

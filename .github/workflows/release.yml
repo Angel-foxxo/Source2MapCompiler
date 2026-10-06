@@ -1,0 +1,123 @@
+name: Release
+
+# releases the version in Directory.Build.props: bump it there, push, then run this
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  tag:
+    name: Version and tag
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # push the tag
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Ensure release is running from master
+      run: |
+        if [[ "${GITHUB_REF}" != "refs/heads/master" ]]; then
+          echo "Releases must run from master. Current ref: ${GITHUB_REF}"
+          exit 1
+        fi
+
+    - name: Read release version
+      id: version
+      run: |
+        VERSION="$(sed -n 's|.*<Version>\(.*\)</Version>.*|\1|p' Directory.Build.props)"
+        if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+          echo "Invalid semver version in Directory.Build.props: $VERSION"
+          exit 1
+        fi
+        if git ls-remote --exit-code --tags origin "refs/tags/v${VERSION}" > /dev/null; then
+          echo "v${VERSION} is already released, bump the version in Directory.Build.props first"
+          exit 1
+        fi
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+    - name: Configure Git author
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+    - name: Create tag
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        set -eux
+        git tag "v${VERSION}"
+        git push origin "v${VERSION}"
+
+  build:
+    name: windows-latest
+    needs: tag
+    # resourcecompiler only runs on Windows, so the app is only built for it
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        ref: v${{ needs.tag.outputs.version }}
+    - uses: ./.github/actions/setup-dotnet-cache
+
+    - name: Build
+      run: dotnet build --configuration Release Source2MapCompiler.slnx
+
+    - name: Publish Source2MapCompiler
+      run: dotnet publish --configuration Release --runtime win-x64 Source2MapCompiler/Source2MapCompiler.csproj
+
+    - name: Upload Source2MapCompiler
+      uses: actions/upload-artifact@v7
+      with:
+        name: Source2MapCompiler-windows-x64
+        path: Source2MapCompiler/bin/Release/win-x64/publish
+
+  publish:
+    name: Publish
+    needs: [tag, build]
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # create the release
+
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v8
+      with:
+        path: artifacts
+
+    - name: Create release files
+      run: |
+       set -eux
+       mkdir release
+       zip -9j release/Source2MapCompiler-windows-x64.zip artifacts/Source2MapCompiler-windows-x64/*
+
+    - name: Display structure of archived files
+      run: ls -Rl
+      working-directory: release
+
+    - name: Release
+      uses: softprops/action-gh-release@v3
+      with:
+        tag_name: v${{ needs.tag.outputs.version }}
+        name: v${{ needs.tag.outputs.version }}
+        draft: true
+        prerelease: ${{ contains(needs.tag.outputs.version, '-') }}
+        generate_release_notes: true
+        files: release/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

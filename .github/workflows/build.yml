@@ -1,0 +1,44 @@
+name: CI
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+    - master
+    paths-ignore:
+    - '*.md'
+  pull_request:
+    paths-ignore:
+    - '*.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+env:
+  NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+
+jobs:
+  build:
+    name: windows-latest
+    # resourcecompiler only runs on Windows, so the app is only built for it
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v7
+    - uses: ./.github/actions/setup-dotnet-cache
+
+    - name: Build
+      run: dotnet build --configuration Release Source2MapCompiler.slnx
+
+    - name: Publish Source2MapCompiler
+      run: dotnet publish --configuration Release --runtime win-x64 Source2MapCompiler/Source2MapCompiler.csproj
+
+    - name: Upload Source2MapCompiler
+      uses: actions/upload-artifact@v7
+      with:
+        name: Source2MapCompiler-windows-x64
+        path: Source2MapCompiler/bin/Release/win-x64/publish
