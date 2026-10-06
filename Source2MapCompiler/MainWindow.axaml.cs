@@ -109,8 +109,8 @@ public partial class MainWindow : Window
         // the compiler prints faster than lines can be shown one by one, so what it printed is shown a few times a second
         new DispatcherTimer(TimeSpan.FromMilliseconds(100), DispatcherPriority.Background, (_, _) => FlushLog()).Start();
 
-        var profiles = LoadSettings()?.Profiles.Select(p => CompileOptions.Profile(p.Key, CompileOptions.FromText(p.Value), p.Value.GetValueOrDefault(ProfileLockedKey) != "0")) ?? [];
-        SetPresets([CompileOptions.EntitiesOnly, CompileOptions.Custom], profiles);
+        // the profiles are the game's own, so they come with it
+        SetPresets([CompileOptions.EntitiesOnly, CompileOptions.Custom], []);
         presetList.SelectionChanged += OnPresetChanged;
         BuildOptions();
         HelpSystemEventReg();
@@ -150,24 +150,39 @@ public partial class MainWindow : Window
         memoryHistory?.Add(memory);
     }
 
-    // Lists the games installed through Steam and picks the first, the one preferred
+    // Lists the games installed through Steam and those picked with Custom path before, and picks the one picked last, or else
+    // the first, the one preferred. Picking it brings back where it was left
     private async void Form1_Load(object? sender, RoutedEventArgs e)
     {
+        var settings = LoadSettings();
+
         foreach (var installed in Games.Installed())
         {
             AddGame(installed);
         }
 
+        foreach (var folder in settings?.CustomGames ?? [])
+        {
+            if (Listed(folder) == null && Games.Find(folder) is { } info)
+            {
+                AddGame(new InstalledGame(info, folder));
+            }
+        }
+
         if (gameList.ItemCount > 0)
         {
-            gameList.SelectedIndex = 0;
+            gameList.SelectedItem = (settings?.GameFolder is { } last ? Listed(last) : null) ?? gameList.Items[0];
         }
         else
         {
             await CS2Validator();
         }
+    }
 
-        RestoreMap();
+    // The game in the dropdown whose folder this is, or null when it isn't there
+    private ComboBoxItem? Listed(string folder)
+    {
+        return gameList.Items.OfType<ComboBoxItem>().FirstOrDefault(item => string.Equals((string?)item.Tag, folder, StringComparison.OrdinalIgnoreCase));
     }
 
     // Adds a game to the dropdown, with its folder as the tooltip, since two installs of a game share its name
@@ -185,7 +200,9 @@ public partial class MainWindow : Window
         {
             cs2dir = folder;
             ToolTip.SetTip(gameList, cs2dir);
+            SaveSettings(settings => settings.GameFolder = folder);
             await CS2Validator();
+            RestoreMap();
             UpdateArgLabel();
         }
     }
@@ -201,6 +218,7 @@ public partial class MainWindow : Window
         }
 
         game = found.Game;
+        SetPresets(Own, GameProfiles());
         BuildOptions();
 
         if (File.Exists(Path.Combine(cs2dir, "resourcecompiler.exe")))
@@ -456,9 +474,20 @@ public partial class MainWindow : Window
 
         if (files.Count > 0 && files[0].TryGetLocalPath() is { } file && Path.GetDirectoryName(file) is { } folder && Games.Find(folder) is { } info)
         {
-            // a game outside Steam's libraries joins the dropdown
-            gameList.SelectedItem = gameList.Items.OfType<ComboBoxItem>().FirstOrDefault(item => string.Equals((string?)item.Tag, folder, StringComparison.OrdinalIgnoreCase))
-                ?? AddGame(new InstalledGame(info, folder));
+            // a game outside Steam's libraries joins the dropdown, and is listed again next time
+            if (Listed(folder) is not { } item)
+            {
+                item = AddGame(new InstalledGame(info, folder));
+                SaveSettings(settings =>
+                {
+                    if (!settings.CustomGames.Contains(folder, StringComparer.OrdinalIgnoreCase))
+                    {
+                        settings.CustomGames.Add(folder);
+                    }
+                });
+            }
+
+            gameList.SelectedItem = item;
         }
     }
 
@@ -512,7 +541,7 @@ public partial class MainWindow : Window
         if (files.Count > 0 && files[0].TryGetLocalPath() is { } file)
         {
             SetMap(file);
-            SaveSettings(settings => settings.Map = file);
+            SaveSettings(settings => settings.For(game).Map = file);
         }
     }
 
@@ -564,13 +593,31 @@ public partial class MainWindow : Window
         UpdateArgLabel();
     }
 
-    // The map opened last time, unless its file is gone, in which case there's none
+    // The game's map from last time, unless its file is gone. Without one no map is open, and the options are those the game
+    // was left with while none was
     private void RestoreMap()
     {
-        if (cs2dir != null && LoadSettings()?.Map is { } file && File.Exists(file))
+        if (cs2dir == null)
+        {
+            return;
+        }
+
+        var remembered = LoadSettings()?.For(game);
+
+        if (remembered?.Map is { } file && File.Exists(file))
         {
             SetMap(file);
+            return;
         }
+
+        mappath = mapname = addonname = outputpath = null;
+        mapLabel.Text = "N/A";
+        ToolTip.SetTip(mapLabel, null);
+        ShowOutput();
+        Title = "Source2 Map Compiler";
+        button5.IsEnabled = false;
+        UseMapPresets(remembered?.Options);
+        UpdateArgLabel();
     }
 
     // Remembering the map and its presets is a convenience, so a file that can't be read or written doesn't stop anything, it
@@ -890,20 +937,27 @@ public partial class MainWindow : Window
         return name;
     }
 
-    // The profiles are kept in the settings, in the order they were made, for every map to use
+    // The profiles are kept in the settings for the game, in the order they were made, for every map of it to use
     private void SaveProfiles()
     {
         SaveSettings(settings =>
         {
-            settings.Profiles.Clear();
+            var profiles = settings.For(game).Profiles;
+            profiles.Clear();
 
             foreach (var profile in Profiles)
             {
                 var text = CompileOptions.ToText(profile.Values);
                 text[ProfileLockedKey] = profile.Locked ? "1" : "0";
-                settings.Profiles[profile.Name] = text;
+                profiles[profile.Name] = text;
             }
         });
+    }
+
+    // The game's profiles as they're kept
+    private IEnumerable<Preset> GameProfiles()
+    {
+        return LoadSettings()?.For(game).Profiles.Select(p => CompileOptions.Profile(p.Key, CompileOptions.FromText(p.Value), p.Value.GetValueOrDefault(ProfileLockedKey) != "0")) ?? [];
     }
 
     private Border BuildCard(OptionGroup group)
@@ -1142,7 +1196,7 @@ public partial class MainWindow : Window
 
     // Remembers the preset picked for the map, and for Custom or a profile, the options it's now left with, so they come back
     // with the map. Custom and Entities only are kept in the map's file and the profiles in the settings. Only the user's own changes get here,
-    // not the list moving to the preset the options match. Without a map only the profiles are kept
+    // not the list moving to the preset the options match. Without a map they're kept in the settings for the game
     private void RememberPreset()
     {
         if (presetList.SelectedIndex < 0)
@@ -1173,23 +1227,29 @@ public partial class MainWindow : Window
             SaveProfiles();
         }
 
-        if (mappath is not { } map)
+        void Keep(MapPresets stored)
         {
-            return;
-        }
-
-        Remember(() =>
-        {
-            var stored = MapPresets.Load(map) ?? new MapPresets();
             stored.Preset = preset.Name;
 
             if (preset.Kind is PresetKind.Custom or PresetKind.EntitiesOnly)
             {
                 stored.Presets[preset.Name] = CompileOptions.ToText(preset.Values);
             }
+        }
 
-            stored.Save(map);
-        });
+        if (mappath is { } map)
+        {
+            Remember(() =>
+            {
+                var stored = MapPresets.Load(map) ?? new MapPresets();
+                Keep(stored);
+                stored.Save(map);
+            });
+        }
+        else
+        {
+            SaveSettings(settings => Keep(settings.For(game).Options ??= new MapPresets()));
+        }
     }
 
     // Moves the preset list to the preset the options match, or to Custom when they match none

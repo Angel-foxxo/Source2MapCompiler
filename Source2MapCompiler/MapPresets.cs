@@ -6,7 +6,8 @@ namespace Source2MapCompiler;
 
 // The presets of one map, kept in a file next to it named after it, de_dogtown_compilepreset.vdf for de_dogtown.vmap, so a
 // map's compile settings go wherever the map goes. It holds the preset or profile last picked for the map and the map's own
-// Custom options. Whatever a newer version puts in the file is kept through a save by an older one
+// Custom options. Whatever a newer version puts in the file is kept through a save by an older one. The settings keep the
+// options picked while no map is open the same way, for each game
 internal sealed class MapPresets
 {
     private const string PresetKey = "preset";
@@ -36,7 +37,12 @@ internal sealed class MapPresets
         }
 
         using var stream = File.OpenRead(path);
-        var stored = new MapPresets { data = KVSerializer.Create(KVSerializationFormat.KeyValues1Text).Deserialize(stream, KVSerializerOptions.DefaultOptions).Root };
+        return Read(KVSerializer.Create(KVSerializationFormat.KeyValues1Text).Deserialize(stream, KVSerializerOptions.DefaultOptions).Root);
+    }
+
+    public static MapPresets Read(KVObject block)
+    {
+        var stored = new MapPresets { data = block };
 
         if (stored.data.TryGetValue(PresetKey, out var preset) && (string)preset is { Length: > 0 } name)
         {
@@ -87,6 +93,18 @@ internal sealed class MapPresets
 
     public void Save(string map)
     {
+        var saved = Write();
+
+        using (var stream = File.Create(PathFor(map)))
+        {
+            KVSerializer.Create(KVSerializationFormat.KeyValues1Text).Serialize(stream, saved, "compilepreset");
+        }
+
+        data = saved;
+    }
+
+    public KVObject Write()
+    {
         var saved = KVObject.Collection();
 
         if (Preset != null)
@@ -101,11 +119,6 @@ internal sealed class MapPresets
             saved.Add(child.Key, child.Value);
         }
 
-        using (var stream = File.Create(PathFor(map)))
-        {
-            KVSerializer.Create(KVSerializationFormat.KeyValues1Text).Serialize(stream, saved, "compilepreset");
-        }
-
-        data = saved;
+        return saved;
     }
 }
