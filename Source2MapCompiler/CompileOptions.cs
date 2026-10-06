@@ -158,8 +158,7 @@ internal static class CompileOptions
                 new() { Id = "surfaceEffects", Label = "Dynamic surface effects", Help = "Build the world's dynamic surface effects.", Default = true, Flags = o => o.On() ? [] : ["-skipauxfiles"] },
                 // rebake surface graph option is disabled when surfaceEffects is disabled
                 new() { Id = "rebakeSurfaceGraph", Label = "Rebake Dynamic Surface Effects", Help = "Force surface graph to be rebuilt.", Default = true, Flags = o => o.On() ? ["-rebake_surfacegraph"] : [] },
-                // default option when deformables are off is -deformables none
-                new() { Id = "deformables", Label = "Deformable geometry", Help = "Force deformable geometry to be built.", Default = false, Flags = o => o.On() ? ["-deformables forced"] : [] },
+                new() { Id = "deformables", Label = "Deformable geometry", Help = "Force deformable geometry to be built.", Default = false, Flags = o => o.On() ? ["-deformables forced"] : ["-deformables none"] },
                 new() { Id = "debugVisGeometry", Label = "Debug vis geometry", Help = "Debug VIS Geometry.", Default = false, Folded = true, Flags = o => o.On() ? ["-debugvisgeo"] : [] },
                 new() { Id = "baseTileMeshOnly", Label = "Only base tile mesh geometry", Help = "Only compile base Tile Mesh geometry.", Default = false, Folded = true, Flags = o => o.On() ? ["-tileMeshBaseGeometry"] : [] },
             ],
@@ -252,7 +251,7 @@ internal static class CompileOptions
                 new() { Id = "threads", Label = "Threads", Help = "Amount of CPU threads used by the compiler.", Kind = OptionKind.Threads },
                 new() { Id = "saveLog", Label = "Save log to console.log", Help = "Save resourcecompiler log to console.log in game/mod.", Default = false, Flags = o => o.On() ? ["-condebug", "-consolelog"] : [] },
                 new() { Id = "vconsole", Label = "Print to VConsole", Help = "Print resourcecompiler data to VConsole (Default port 29000)", Default = false, Flags = o => o.On() ? ["-vconsole", "-vconport 29000"] : [] },
-                new() { Id = "compileStats", Label = "Print compile stats", Help = "Print VProf stats at the end of compilation.", Default = false, Flags = o => o.On() ? ["-resourcecompiler_log_compile_stats"] : [] },
+                new() { Id = "compileStats", Label = "Print compile stats", Help = "Print VProf stats at the end of compilation.", Default = true, Flags = o => o.On() ? ["-resourcecompiler_log_compile_stats"] : [] },
                 new() { Id = "ignoreSchemaMismatches", Label = "Ignore schema mismatches", Help = "Ignore Schema mismatches.", Default = false, Folded = true, Flags = o => o.On() ? ["-danger_mode_ignore_schema_mismatches"] : [] },
             ],
         },
