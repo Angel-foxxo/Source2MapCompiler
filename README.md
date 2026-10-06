@@ -7,6 +7,7 @@ A GUI for resourcecompiler with the same options as Hammer for compiling maps, p
 
 - Compiles outside of Tools, the Source2 tools eat up a ton of system resources and RAM, on some systems this can make a huge impact to compile speed.
 - Added a live Lightmap Preview, showing each block of the lightmap and each light probe volume as vrad3 finishes baking them on the GPU.
+- Improved preset options, for example "Final" now compiles an 8k lightmap.
 - Added a progress bar that follows the compile's stages, with counts like the lightmap blocks baked and the vis passes done.
 - Added CPU, GPU, video memory and memory graphs, to see how many system resources the compile is using.
 - Exposes extra resourcecompiler options, like thread counts for the compiler and Steam Audio, lightmap compression and bake block size, deterministic lightmap charts, and debug output.

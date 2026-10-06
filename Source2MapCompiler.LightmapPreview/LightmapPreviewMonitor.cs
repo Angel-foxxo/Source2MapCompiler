@@ -376,7 +376,8 @@ public sealed class LightmapPreviewMonitor : IDisposable
     private LightmapAtlas ReadExr(string name, Func<int, int, LightmapAtlas> atlasFor)
     {
         using var stream = new FileStream(Path.Combine(vrad3Folder, name), FileMode.Open, FileAccess.Read, FileShare.Read);
-        using var exr = ExrReader.OpenSource(new StreamDataSource(stream, true), null!);
+        using var dataSource = new StreamDataSource(stream, true);
+        using var exr = ExrReader.OpenSource(dataSource, null!);
 
         Check(exr.ParseHeader());
 

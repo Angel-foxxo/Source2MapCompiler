@@ -279,7 +279,8 @@ internal static class CompileOptions
     // Rewrites the entity lumps and starts with every other stage off. Like Custom, what's changed while it's picked is kept
     // in it for the map, so stages can be turned back on, all but the lighting
     public static readonly Preset EntitiesOnly = new("Entities only", "Will rewrite the entity lumps in the map with new ones, without touching anything else, works with mesh entities too. Stages turned back on are kept for the map.", "Only the entities are rebuilt. Turn stages back on to build them too, all but the lighting",
-        Values(("physics", false), ("lighting", false), ("visibility", false), ("navigation", false), ("gridNav", false), ("steamAudio", false)), PresetKind.EntitiesOnly) { Icon = "entity" };
+        Values(("physics", false), ("lighting", false), ("visibility", false), ("navigation", false), ("gridNav", false), ("steamAudio", false)), PresetKind.EntitiesOnly)
+    { Icon = "entity" };
 
     // what a map starts with until it has a preset of its own
     public const string NewMapPreset = "Full";

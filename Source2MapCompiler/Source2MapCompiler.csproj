@@ -8,11 +8,13 @@
     <RootNamespace>Source2MapCompiler</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>assets\icon.ico</ApplicationIcon>
-    <!-- one self contained exe with the native libraries unpacked on first run -->
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and '$(_IsPublishing)' == 'true'">win-x64</RuntimeIdentifier>
     <SelfContained Condition="'$(RuntimeIdentifier)' != ''">true</SelfContained>
     <PublishSingleFile Condition="'$(Configuration)' != 'Debug'">true</PublishSingleFile>
+    <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">true</PublishTrimmed>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
     <!-- CA2007: continuations must stay on the UI thread -->
     <NoWarn>$(NoWarn);CA2007</NoWarn>
     <!-- Avalonia renders with SkiaSharp, so its native library must stay in the output -->

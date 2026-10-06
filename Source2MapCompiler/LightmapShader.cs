@@ -43,7 +43,7 @@ internal static class LightmapShader
     public static SKShader Create(SKImage lightmap, float exposure, bool nearest)
     {
         var sampling = nearest ? new SKSamplingOptions(SKFilterMode.Nearest, SKMipmapMode.None) : new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear);
-        var builder = new SKRuntimeShaderBuilder(Effect);
+        using var builder = new SKRuntimeShaderBuilder(Effect);
         builder.Uniforms["exposure"] = exposure;
         builder.Children["lightmap"] = lightmap.ToShader(SKShaderTileMode.Clamp, SKShaderTileMode.Clamp, sampling);
         return builder.Build();
