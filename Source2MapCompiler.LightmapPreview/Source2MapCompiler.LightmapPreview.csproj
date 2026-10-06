@@ -8,6 +8,10 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Iced" Version="1.21.0" />
+    <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.346">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="TinyEXR.NET" Version="1.2.0" />
   </ItemGroup>
 </Project>

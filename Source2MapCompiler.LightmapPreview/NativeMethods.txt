@@ -1,0 +1,5 @@
+OpenProcess
+CloseHandle
+ReadProcessMemory
+NtQueryInformationProcess
+PROCESS_BASIC_INFORMATION

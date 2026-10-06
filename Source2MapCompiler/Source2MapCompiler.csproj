@@ -17,6 +17,8 @@
     <NoWarn>$(NoWarn);CA2007</NoWarn>
     <!-- Avalonia renders with SkiaSharp, so its native library must stay in the output -->
     <UsesSkiaSharp>true</UsesSkiaSharp>
+    <!-- CsWin32's generated Win32 imports use pointers -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.2" />
@@ -25,6 +27,10 @@
     <PackageReference Include="Avalonia.Desktop" Version="12.1.2" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.2" />
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.2" />
+    <PackageReference Include="Microsoft.Windows.CsWin32" Version="0.3.346">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="ScottPlot.Avalonia" Version="5.1.59" />
     <PackageReference Include="System.Diagnostics.PerformanceCounter" Version="10.0.12" />
     <PackageReference Include="ValveKeyValue" Version="0.70.0.499" />

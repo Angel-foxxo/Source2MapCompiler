@@ -1,6 +1,10 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
+using Windows.Win32;
+using Windows.Win32.Foundation;
+using Windows.Win32.System.Threading;
 
 namespace Source2MapCompiler.LightmapPreview;
 
@@ -41,11 +45,11 @@ internal sealed unsafe class Vrad3Reader : IDisposable
             return null;
         }
 
-        var handle = NativeMethods.OpenProcess(NativeMethods.ProcessVmRead | NativeMethods.ProcessQueryLimitedInformation, false, target.Id);
+        nint handle = PInvoke.OpenProcess(PROCESS_ACCESS_RIGHTS.PROCESS_VM_READ | PROCESS_ACCESS_RIGHTS.PROCESS_QUERY_LIMITED_INFORMATION, false, (uint)target.Id);
 
         if (handle == 0)
         {
-            throw NativeMethods.LastError($"OpenProcess({target.Id})");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), $"OpenProcess({target.Id})");
         }
 
         try
@@ -55,7 +59,7 @@ internal sealed unsafe class Vrad3Reader : IDisposable
         }
         catch
         {
-            NativeMethods.CloseHandle(handle);
+            PInvoke.CloseHandle((HANDLE)handle);
             throw;
         }
     }
@@ -163,7 +167,7 @@ internal sealed unsafe class Vrad3Reader : IDisposable
             for (var offset = 0; offset < size; offset += Page)
             {
                 // Pages that can't be read are left as zeros
-                NativeMethods.ReadProcessMemory(process, address + offset, bytes + offset, Math.Min(Page, size - offset), out _);
+                PInvoke.ReadProcessMemory((HANDLE)process, (void*)(address + offset), bytes + offset, (nuint)Math.Min(Page, size - offset), null);
             }
         }
 
@@ -175,9 +179,9 @@ internal sealed unsafe class Vrad3Reader : IDisposable
     {
         T value;
 
-        if (!NativeMethods.ReadProcessMemory(process, (nint)address, &value, sizeof(T), out _))
+        if (!PInvoke.ReadProcessMemory((HANDLE)process, (void*)address, &value, (nuint)sizeof(T), null))
         {
-            throw NativeMethods.LastError($"ReadProcessMemory({address:X})");
+            throw new Win32Exception(Marshal.GetLastWin32Error(), $"ReadProcessMemory({address:X})");
         }
 
         return value;
@@ -187,15 +191,15 @@ internal sealed unsafe class Vrad3Reader : IDisposable
     {
         fixed (byte* bytes = destination)
         {
-            if (!NativeMethods.ReadProcessMemory(process, (nint)address, bytes, destination.Length, out _))
+            if (!PInvoke.ReadProcessMemory((HANDLE)process, (void*)address, bytes, (nuint)destination.Length, null))
             {
-                throw NativeMethods.LastError($"ReadProcessMemory({address:X})");
+                throw new Win32Exception(Marshal.GetLastWin32Error(), $"ReadProcessMemory({address:X})");
             }
         }
     }
 
     public void Dispose()
     {
-        NativeMethods.CloseHandle(process);
+        PInvoke.CloseHandle((HANDLE)process);
     }
 }

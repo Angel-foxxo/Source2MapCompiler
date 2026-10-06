@@ -733,12 +733,21 @@ public partial class MainWindow : Window
         selectingPreset = false;
     }
 
-    // Takes the map's presets and picks the one it was left with. A map with none yet keeps the options as they are, with a
-    // Custom of its own that starts from them
+    // Takes the map's presets and picks the one it was left with. A map with none yet starts over from the defaults, with the
+    // preset new maps get, rather than with what the map before it was left with
     private void UseMapPresets(MapPresets? stored)
     {
         SetPresets(MapCustom(stored), [.. Profiles]);
-        PickAgain(stored?.Preset);
+
+        if (stored == null)
+        {
+            foreach (var (id, value) in CompileOptions.DefaultsFor(game))
+            {
+                SetValue(id, value);
+            }
+        }
+
+        PickAgain(stored == null ? CompileOptions.NewMapPreset : stored.Preset);
     }
 
     // Picks a preset again, after the options are rebuilt for another game or another map is opened. A profile stays picked,

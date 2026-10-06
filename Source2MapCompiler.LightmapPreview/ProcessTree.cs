@@ -1,3 +1,8 @@
+using Windows.Wdk.System.Threading;
+using Windows.Win32;
+using Windows.Win32.System.Threading;
+using Wdk = Windows.Wdk.PInvoke;
+
 namespace Source2MapCompiler.LightmapPreview;
 
 // The app only runs one compile at a time, but Hammer or another copy of the app can be baking too, so this makes sure we
@@ -29,21 +34,22 @@ internal static class ProcessTree
 
     private static unsafe int ParentOf(int processId)
     {
-        var handle = NativeMethods.OpenProcess(NativeMethods.ProcessQueryLimitedInformation, false, processId);
+        var handle = PInvoke.OpenProcess(PROCESS_ACCESS_RIGHTS.PROCESS_QUERY_LIMITED_INFORMATION, false, (uint)processId);
 
-        if (handle == 0)
+        if (handle.IsNull)
         {
             return 0;
         }
 
         try
         {
-            var status = NativeMethods.NtQueryInformationProcess(handle, 0, out var information, sizeof(NativeMethods.ProcessBasicInformation), out _);
-            return status == 0 ? (int)information.InheritedFromUniqueProcessId : 0;
+            PROCESS_BASIC_INFORMATION information;
+            var status = Wdk.NtQueryInformationProcess(handle, PROCESSINFOCLASS.ProcessBasicInformation, &information, (uint)sizeof(PROCESS_BASIC_INFORMATION), null);
+            return status.SeverityCode == Windows.Win32.Foundation.NTSTATUS.Severity.Success ? (int)information.InheritedFromUniqueProcessId : 0;
         }
         finally
         {
-            NativeMethods.CloseHandle(handle);
+            PInvoke.CloseHandle(handle);
         }
     }
 }

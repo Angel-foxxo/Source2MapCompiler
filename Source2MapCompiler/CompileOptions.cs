@@ -282,6 +282,9 @@ internal static class CompileOptions
             Values(("entitiesOnly", true), ("physics", false), ("lighting", false), ("visibility", false), ("navigation", false), ("gridNav", false), ("steamAudio", false))),
     ];
 
+    // what a map starts with until it has a preset of its own
+    public const string NewMapPreset = "Full";
+
     // picked when the options match none of the presets
     public static readonly Preset Custom = new("Custom", "Your own mix of options. Changing any option picks this, or the preset it matches", "Your own mix of options", new Dictionary<string, object>(), PresetKind.Custom);
 
