@@ -33,7 +33,6 @@ public partial class MainWindow : Window
 {
     private string? cs2dir;
     private string? resourcecompiler;
-    private string? addonname;
     private string? mapname;
     private string? mappath;
     private string? outputpath;
@@ -545,12 +544,11 @@ public partial class MainWindow : Window
         }
     }
 
-    // resourcecompiler puts what it builds under the output root at the map's path below the content folder, so
-    // content\csgo_addons\x\maps\x.vmap becomes <output>\csgo_addons\x\maps\x.vpk. Null for a map list, which builds
-    // several, or a map outside a content folder
-    private string? CompiledMapPath()
+    // The map's path below its content folder, so content\csgo_addons\x\maps\x.vmap gives csgo_addons\x\maps\x.vmap. Null for
+    // a map list, which builds several, or a map outside a content folder
+    private string? MapBelowContent()
     {
-        if (mappath == null || outputpath == null || IsTextFile(mappath))
+        if (mappath == null || IsTextFile(mappath))
         {
             return null;
         }
@@ -559,11 +557,42 @@ public partial class MainWindow : Window
         {
             if (folder.Name.Equals("content", StringComparison.OrdinalIgnoreCase))
             {
-                return Path.Combine(outputpath, Path.ChangeExtension(Path.GetRelativePath(folder.FullName, mappath), ".vpk"));
+                return Path.GetRelativePath(folder.FullName, mappath);
             }
         }
 
         return null;
+    }
+
+    // resourcecompiler puts what it builds under the output root at the map's path below the content folder, so
+    // content\csgo_addons\x\maps\x.vmap becomes <output>\csgo_addons\x\maps\x.vpk
+    private string? CompiledMapPath()
+    {
+        return outputpath != null && MapBelowContent() is { } map ? Path.Combine(outputpath, Path.ChangeExtension(map, ".vpk")) : null;
+    }
+
+    // The output root that puts the map in the folder picked, which is that folder without the map's folders below content
+    // on its end, so picking game\csgo_addons\x\maps gives game. A folder that doesn't end in them is taken as the root
+    private string OutputRoot(string picked)
+    {
+        if (MapBelowContent() is not { } map || Path.GetDirectoryName(map) is not { Length: > 0 } below)
+        {
+            return picked;
+        }
+
+        var root = new DirectoryInfo(picked);
+
+        foreach (var part in below.Split(Path.DirectorySeparatorChar).Reverse())
+        {
+            if (root == null || !root.Name.Equals(part, StringComparison.OrdinalIgnoreCase))
+            {
+                return picked;
+            }
+
+            root = root.Parent;
+        }
+
+        return root?.FullName ?? picked;
     }
 
     // Where the map will be written, or the output root when that can't be known
@@ -583,7 +612,6 @@ public partial class MainWindow : Window
     {
         mappath = file;
         mapname = Path.GetFileName(file);
-        addonname = Directory.GetParent(file)!.Parent!.Name;
         outputpath = Directory.GetParent(cs2dir!)!.Parent!.FullName;
         ShowPath(mapLabel, mappath);
         ShowOutput();
@@ -610,7 +638,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        mappath = mapname = addonname = outputpath = null;
+        mappath = mapname = outputpath = null;
         mapLabel.Text = "N/A";
         ToolTip.SetTip(mapLabel, null);
         ShowOutput();
@@ -662,37 +690,25 @@ public partial class MainWindow : Window
 
     private async void button5_Click(object? sender, RoutedEventArgs e)
     {
-        string[] addonDirectories = {
-            "csgo_addons",
-            "hlvr_addons",
-            "citadel_addons",
-            "dota_addons",
-            "testbed_addons",
-            "steamtours_addons"
-        };
+        // the picker starts where the map goes now, or the nearest folder to it that's there yet
+        var current = CompiledMapPath() is { } compiled ? Path.GetDirectoryName(compiled) : outputpath;
+        var start = current == null ? null : new DirectoryInfo(current);
 
-        IStorageFolder? initialDirectory = null;
-
-        foreach (string addonDir in addonDirectories)
+        while (start is { Exists: false })
         {
-            string path = Path.Combine(Directory.GetParent(cs2dir!)!.Parent!.FullName, addonDir, addonname!, "maps");
-            if (Directory.Exists(path))
-            {
-                initialDirectory = await StorageProvider.TryGetFolderFromPathAsync(path);
-                break;
-            }
+            start = start.Parent;
         }
 
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
             Title = "Change Output",
             AllowMultiple = false,
-            SuggestedStartLocation = initialDirectory,
+            SuggestedStartLocation = start == null ? null : await StorageProvider.TryGetFolderFromPathAsync(start.FullName),
         });
 
         if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } folder)
         {
-            outputpath = folder;
+            outputpath = OutputRoot(folder);
             ShowOutput();
         }
     }
