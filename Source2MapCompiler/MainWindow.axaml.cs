@@ -36,6 +36,9 @@ public partial class MainWindow : Window
     private string? mapname;
     private string? mappath;
     private string? outputpath;
+
+    // the folder picked for the map when resourcecompiler can't build it there, which it's moved to once it's built
+    private string? moveFolder;
     private string? arg;
     private Process? process;
 
@@ -288,6 +291,11 @@ public partial class MainWindow : Window
         cancelled = false;
         statusLabel.Text = "Compiling";
 
+        // taken now, since the output can be changed while it compiles
+        var compiled = CompiledMapPath();
+        var destination = moveFolder != null ? OutputMapPath() : null;
+        var started = DateTime.UtcNow;
+
         var stopwatch = Stopwatch.StartNew();
         progress = new CompileProgress(new OptionValues(values, game), Vrad3Folder());
         progressClock = stopwatch;
@@ -363,8 +371,35 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (exitCode == 0 && compiled != null && destination != null)
+        {
+            MoveCompiledMap(compiled, destination, started);
+        }
+
         Log("(Source2MapCompiler) Compile completed! - " + DateTime.Now + (exitCode == 0 ? "" : $" (exit code {exitCode})") + "\n", LogKind.App);
         statusLabel.Text = (exitCode == 0 ? "Compile completed" : $"Compile exited with code {exitCode}") + $" in {stopwatch.Elapsed:hh\\:mm\\:ss}";
+    }
+
+    // Moves the map built to the folder picked for it. One that wasn't written by this compile is an older build, which isn't
+    // moved over what's there
+    private void MoveCompiledMap(string compiled, string destination, DateTime started)
+    {
+        try
+        {
+            if (!File.Exists(compiled) || File.GetLastWriteTimeUtc(compiled) < started)
+            {
+                Log("(Source2MapCompiler) The map wasn't built, so it wasn't moved to " + destination + "\n", LogKind.Error);
+                return;
+            }
+
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            File.Move(compiled, destination, overwrite: true);
+            Log("(Source2MapCompiler) Moved the map to " + destination + "\n", LogKind.App);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            Log("(Source2MapCompiler) Could not move the map to " + destination + ": " + exception.Message + "\n", LogKind.Error);
+        }
     }
 
     // The lightmap preview only works with GPU bakes
@@ -572,33 +607,68 @@ public partial class MainWindow : Window
     }
 
     // The output root that puts the map in the folder picked, which is that folder without the map's folders below content
-    // on its end, so picking game\csgo_addons\x\maps gives game. A folder that doesn't end in them is taken as the root
-    private string OutputRoot(string picked)
+    // on its end, so picking game\csgo_addons\x\maps gives game. Null when the folder doesn't end in them
+    private string? OutputRoot(string picked)
     {
-        if (MapBelowContent() is not { } map || Path.GetDirectoryName(map) is not { Length: > 0 } below)
+        if (MapBelowContent() is not { } map)
         {
-            return picked;
+            return null;
         }
 
         var root = new DirectoryInfo(picked);
 
-        foreach (var part in below.Split(Path.DirectorySeparatorChar).Reverse())
+        foreach (var part in (Path.GetDirectoryName(map) ?? "").Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries).Reverse())
         {
             if (root == null || !root.Name.Equals(part, StringComparison.OrdinalIgnoreCase))
             {
-                return picked;
+                return null;
             }
 
             root = root.Parent;
         }
 
-        return root?.FullName ?? picked;
+        return root?.FullName;
+    }
+
+    // resourcecompiler can only be told the root it builds under, so a map going to any other folder is built where it
+    // normally goes and moved there after. A map list or a map outside a content folder takes the folder as its root
+    private void SetOutput(string picked)
+    {
+        if (MapBelowContent() == null)
+        {
+            outputpath = picked;
+            moveFolder = null;
+        }
+        else if (OutputRoot(picked) is { } root)
+        {
+            outputpath = root;
+            moveFolder = null;
+        }
+        else
+        {
+            outputpath = GameFolder();
+            moveFolder = picked;
+        }
+
+        ShowOutput();
+    }
+
+    // cs2dir is game\bin\win64
+    private string GameFolder()
+    {
+        return Directory.GetParent(cs2dir!)!.Parent!.FullName;
+    }
+
+    // Where the map ends up, which is the folder picked for it when it's moved there
+    private string? OutputMapPath()
+    {
+        return CompiledMapPath() is { } compiled && moveFolder != null ? Path.Combine(moveFolder, Path.GetFileName(compiled)) : CompiledMapPath();
     }
 
     // Where the map will be written, or the output root when that can't be known
     private void ShowOutput()
     {
-        ShowPath(outputdir, CompiledMapPath() ?? outputpath ?? "N/A");
+        ShowPath(outputdir, OutputMapPath() ?? outputpath ?? "N/A");
     }
 
     // A path shortened in the middle to fit its line, so the whole of it is in its tooltip
@@ -612,7 +682,8 @@ public partial class MainWindow : Window
     {
         mappath = file;
         mapname = Path.GetFileName(file);
-        outputpath = Directory.GetParent(cs2dir!)!.Parent!.FullName;
+        outputpath = GameFolder();
+        moveFolder = null;
         ShowPath(mapLabel, mappath);
         ShowOutput();
         Title = $"Source2 Map Compiler - {Path.GetFileNameWithoutExtension(file)}";
@@ -638,7 +709,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        mappath = mapname = outputpath = null;
+        mappath = mapname = outputpath = moveFolder = null;
         mapLabel.Text = "N/A";
         ToolTip.SetTip(mapLabel, null);
         ShowOutput();
@@ -691,7 +762,7 @@ public partial class MainWindow : Window
     private async void button5_Click(object? sender, RoutedEventArgs e)
     {
         // the picker starts where the map goes now, or the nearest folder to it that's there yet
-        var current = CompiledMapPath() is { } compiled ? Path.GetDirectoryName(compiled) : outputpath;
+        var current = OutputMapPath() is { } output ? Path.GetDirectoryName(output) : outputpath;
         var start = current == null ? null : new DirectoryInfo(current);
 
         while (start is { Exists: false })
@@ -708,8 +779,7 @@ public partial class MainWindow : Window
 
         if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } folder)
         {
-            outputpath = OutputRoot(folder);
-            ShowOutput();
+            SetOutput(folder);
         }
     }
 
