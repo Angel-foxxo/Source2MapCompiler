@@ -17,13 +17,14 @@ internal sealed class ResourceMonitor : IDisposable
 {
     private const double Gigabyte = 1024d * 1024 * 1024;
 
-    private readonly PerformanceCounter cpu = new("Processor Information", "% Processor Utility", "_Total");
-    private readonly PerformanceCounter available = new("Memory", "Available Bytes");
-    private readonly PerformanceCounterCategory gpuEngines = new("GPU Engine");
-    private readonly PerformanceCounterCategory gpuMemory = new("GPU Adapter Memory");
     private readonly Action<ResourceUsage> sampled;
-    private readonly double? vramTotal = VideoMemory();
     private readonly Timer timer;
+
+    private PerformanceCounter? cpu;
+    private PerformanceCounter? available;
+    private PerformanceCounterCategory? gpuEngines;
+    private PerformanceCounterCategory? gpuMemory;
+    private double? vramTotal;
 
     // each GPU engine's last sample, as its use is the change since then
     private Dictionary<string, CounterSample> engines = [];
@@ -39,14 +40,22 @@ internal sealed class ResourceMonitor : IDisposable
     {
         try
         {
+            if (cpu == null || available == null)
+            {
+                cpu = new PerformanceCounter("Processor Information", "% Processor Utility", "_Total");
+                available = new PerformanceCounter("Memory", "Available Bytes");
+                vramTotal = VideoMemory();
+            }
+
             var total = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
             var (gpu, vram) = Gpu();
             sampled(new ResourceUsage(Math.Min(cpu.NextValue(), 100), gpu, vram, vramTotal, (total - available.NextValue()) / Gigabyte, total / Gigabyte));
             timer.Change(1000, Timeout.Infinite);
         }
-        catch (Exception exception) when (exception is InvalidOperationException or UnauthorizedAccessException or ObjectDisposedException)
+        catch (Exception)
         {
-            // the counters are missing or turned off, so there's nothing to show
+            // the counters are missing, turned off or broken, so there's nothing to show. Anything thrown on the timer thread
+            // would take the whole app down, and the graphs aren't worth that
         }
     }
 
@@ -56,6 +65,9 @@ internal sealed class ResourceMonitor : IDisposable
     {
         try
         {
+            gpuEngines ??= new PerformanceCounterCategory("GPU Engine");
+            gpuMemory ??= new PerformanceCounterCategory("GPU Adapter Memory");
+
             var byType = new Dictionary<string, float>();
             var seen = new Dictionary<string, CounterSample>();
 
@@ -76,8 +88,9 @@ internal sealed class ResourceMonitor : IDisposable
             var vram = gpuMemory.ReadCategory()["Dedicated Usage"].Values.Cast<InstanceData>().Sum(adapter => adapter.RawValue) / Gigabyte;
             return (Math.Min(byType.Values.DefaultIfEmpty(0).Max(), 100), vram);
         }
-        catch (InvalidOperationException)
+        catch (Exception)
         {
+            // a category without the counter reads as null, and older drivers don't publish these at all
             return (null, null);
         }
     }
@@ -108,7 +121,7 @@ internal sealed class ResourceMonitor : IDisposable
     public void Dispose()
     {
         timer.Dispose();
-        cpu.Dispose();
-        available.Dispose();
+        cpu?.Dispose();
+        available?.Dispose();
     }
 }
