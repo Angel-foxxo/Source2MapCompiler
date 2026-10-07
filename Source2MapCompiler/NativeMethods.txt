@@ -2,3 +2,15 @@ CreateJobObject
 SetInformationJobObject
 AssignProcessToJobObject
 JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+GetSystemTimes
+GlobalMemoryStatusEx
+PdhOpenQuery
+PdhAddEnglishCounter
+PdhCollectQueryData
+PdhGetFormattedCounterArray
+PdhCloseQuery
+PDH_FMT
+PDH_MORE_DATA
+PDH_CSTATUS_VALID_DATA
+PDH_CSTATUS_NEW_DATA
+PDH_FMT_COUNTERVALUE_ITEM_W

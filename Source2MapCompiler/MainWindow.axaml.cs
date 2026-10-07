@@ -116,7 +116,7 @@ public partial class MainWindow : Window
         HelpSystemEventReg();
 
         Loaded += Form1_Load;
-        if (OperatingSystem.IsWindows())
+        if (OperatingSystem.IsWindowsVersionAtLeast(6, 0, 6000))
         {
             // the colours Windows' Resource Monitor draws them in
             cpuHistory = new ResourceGraph(cpuGraph, "#D04545");
@@ -127,7 +127,7 @@ public partial class MainWindow : Window
 
         Closed += (_, _) =>
         {
-            if (OperatingSystem.IsWindows())
+            if (OperatingSystem.IsWindowsVersionAtLeast(6, 0, 6000))
             {
                 lightmapPreview?.Dispose();
                 resourceMonitor?.Dispose();

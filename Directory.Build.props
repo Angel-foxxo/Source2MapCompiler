@@ -13,7 +13,7 @@
     <Nullable>enable</Nullable>
 
     <!-- the one place the version lives, the release workflow tags and publishes whatever stands here -->
-    <Version>2.0.1</Version>
+    <Version>2.0.2</Version>
 
     <RepositoryUrl>https://github.com/Angel-foxxo/Source2MapCompiler</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
